@@ -383,7 +383,7 @@ export type ExcalidrawElbowArrowElement = Merge<
     endIsSpecial: boolean | null;
   }
 >;
-
+ 
 export type StrokeVariability = "variable" | "constant";
 
 export type StrokeOptions = Readonly<{
