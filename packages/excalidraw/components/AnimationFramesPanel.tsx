@@ -1,21 +1,42 @@
 import React, { useState } from "react";
-import { ExcalidrawAnimationFrameElement, NonDeletedExcalidrawElement, NonDeleted } from "@excalidraw/element/types";
+import {
+  ExcalidrawAnimationFrameElement,
+  NonDeletedExcalidrawElement,
+  NonDeleted,
+} from "@excalidraw/element/types";
 import { AppState, UIAppState, AppClassProperties } from "../types";
 import { t } from "../i18n";
 import { mutateElement } from "@excalidraw/element";
+import { actionAnimate } from "../actions/actionAnimate";
 
 import "./AnimationFramesPanel.scss";
 
 // Simple close icon SVG
 const CloseIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <line x1="18" y1="6" x2="6" y2="18"></line>
     <line x1="6" y1="6" x2="18" y2="18"></line>
   </svg>
 );
 
 const DragHandleIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    width="16"
+    height="16"
+  >
     <line x1="8" y1="6" x2="16" y2="6"></line>
     <line x1="8" y1="12" x2="16" y2="12"></line>
     <line x1="8" y1="18" x2="16" y2="18"></line>
@@ -36,12 +57,22 @@ export const AnimationFramesPanel = ({
   app,
 }: AnimationFramesPanelProps) => {
   const [draggedElementId, setDraggedElementId] = useState<string | null>(null);
-  const [dragOverElementId, setDragOverElementId] = useState<string | null>(null);
-  const [dragOverPosition, setDragOverPosition] = useState<"top" | "bottom" | null>(null);
+  const [dragOverElementId, setDragOverElementId] = useState<string | null>(
+    null,
+  );
+  const [dragOverPosition, setDragOverPosition] = useState<
+    "top" | "bottom" | null
+  >(null);
 
   const frames = elements
     .filter((el) => el.type === "animationframe")
-    .map((el) => el as NonDeletedExcalidrawElement & { name: string | null; frameIndex: number })
+    .map(
+      (el) =>
+        el as NonDeletedExcalidrawElement & {
+          name: string | null;
+          frameIndex: number;
+        },
+    )
     .sort((a, b) => a.frameIndex - b.frameIndex);
 
   if (!appState.openAnimationPanel) {
@@ -58,7 +89,7 @@ export const AnimationFramesPanel = ({
     if (draggedElementId === id) return;
 
     setDragOverElementId(id);
-    
+
     // Determine if we're dragging over the top or bottom half of the element
     const rect = (e.target as HTMLElement).getBoundingClientRect();
     const y = e.clientY - rect.top;
@@ -76,7 +107,11 @@ export const AnimationFramesPanel = ({
 
   const handleDrop = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
-    if (!draggedElementId || draggedElementId === targetId || !dragOverPosition) {
+    if (
+      !draggedElementId ||
+      draggedElementId === targetId ||
+      !dragOverPosition
+    ) {
       setDraggedElementId(null);
       setDragOverElementId(null);
       setDragOverPosition(null);
@@ -90,7 +125,7 @@ export const AnimationFramesPanel = ({
 
     const newFrames = [...frames];
     const [draggedFrame] = newFrames.splice(draggedIdx, 1);
-    
+
     // Calculate new index
     let insertIdx = targetIdx;
     if (draggedIdx < targetIdx) {
@@ -126,9 +161,21 @@ export const AnimationFramesPanel = ({
   return (
     <div className="animation-frames-panel">
       <div className="animation-frames-panel-header">
-        <span>Animation Frames</span>
-        <button 
-          className="close-button" 
+        <div className="animation-frames-panel-header-title">
+          <span>Animation Frames</span>
+          <button
+            type="button"
+            className="play-animation-button"
+            title="Play animation"
+            onClick={() => app.actionManager.executeAction(actionAnimate)}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        </div>
+        <button
+          className="close-button"
           onClick={() => setAppState({ openAnimationPanel: false })}
           title="Close Panel"
         >
@@ -137,7 +184,14 @@ export const AnimationFramesPanel = ({
       </div>
       <div className="animation-frames-panel-list">
         {frames.length === 0 ? (
-          <div style={{ padding: "1rem", textAlign: "center", color: "var(--text-primary-color)", opacity: 0.6 }}>
+          <div
+            style={{
+              padding: "1rem",
+              textAlign: "center",
+              color: "var(--text-primary-color)",
+              opacity: 0.6,
+            }}
+          >
             No animation frames found.
           </div>
         ) : (
@@ -147,8 +201,8 @@ export const AnimationFramesPanel = ({
               className={`animation-frames-panel-item ${
                 draggedElementId === frame.id ? "dragging" : ""
               } ${
-                dragOverElementId === frame.id 
-                  ? `drag-over-${dragOverPosition}` 
+                dragOverElementId === frame.id
+                  ? `drag-over-${dragOverPosition}`
                   : ""
               }`}
               draggable
