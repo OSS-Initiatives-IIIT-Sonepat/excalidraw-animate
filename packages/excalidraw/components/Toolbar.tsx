@@ -218,6 +218,13 @@ const ExtraToolsDropdown = ({
         >
           Animate
         </DropdownMenu.Item>
+        <DropdownMenu.Item
+          onSelect={() => setAppState({ openAnimationPanel: !app.state.openAnimationPanel })}
+          icon={playerPlayIcon}
+          data-testid="toolbar-frames-panel"
+        >
+          {app.state.openAnimationPanel ? "Hide Frames Panel" : "Show Frames Panel"}
+        </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu>
   );
