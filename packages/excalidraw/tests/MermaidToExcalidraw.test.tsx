@@ -61,8 +61,8 @@ mockMermaidToExcalidraw({
               y: 44,
               strokeWidth: 2,
               points: [
-                [0, 0],
-                [0, 50],
+                [0, 0] as any,
+                [0, 50] as any,
               ],
               roundness: {
                 type: 2,

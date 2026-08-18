@@ -56,6 +56,7 @@ import { JSONExportDialog } from "./JSONExportDialog";
 import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
 import { Toolbar } from "./Toolbar";
+import { AnimationFramesPanel } from "./AnimationFramesPanel";
 
 import "./LayerUI.scss";
 import "./Toolbar.scss";
@@ -404,6 +405,28 @@ const LayerUI = ({
                 currentUserControls={currentUserControls}
               />
             )}
+            <button
+              onClick={() =>
+                setAppState({
+                  openAnimationPanel: !appState.openAnimationPanel,
+                })
+              }
+              title="Toggle Animation Frames Panel"
+              style={{
+                marginRight: "0.5rem",
+                padding: "0.4rem 0.75rem",
+                borderRadius: "var(--border-radius-md, 8px)",
+                border: appState.openAnimationPanel ? "2px solid var(--color-primary, #6965db)" : "1px solid var(--color-gray-30, #ccc)",
+                background: appState.openAnimationPanel ? "var(--color-primary-light, #e0dfff)" : "var(--island-bg-color, #fff)",
+                color: "var(--text-primary-color, #1b1b1f)",
+                cursor: "pointer",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                whiteSpace: "nowrap" as const,
+              }}
+            >
+              ▶ Frames
+            </button>
             {renderTopRightUI?.(
               editorInterface.formFactor === "phone",
               appState,
@@ -615,6 +638,12 @@ const LayerUI = ({
           >
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
+            <AnimationFramesPanel
+              elements={elements}
+              appState={appState}
+              setAppState={setAppState}
+              app={app}
+            />
             <Footer
               appState={appState}
               actionManager={actionManager}
