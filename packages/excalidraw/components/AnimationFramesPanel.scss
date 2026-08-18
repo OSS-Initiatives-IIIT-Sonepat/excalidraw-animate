@@ -26,6 +26,34 @@
       margin-bottom: 0.5rem;
       font-size: 0.875rem;
 
+      .animation-frames-panel-header-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .play-animation-button {
+        background-color: var(--color-primary, #6965db);
+        color: white;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        transition: background-color 0.2s ease;
+        
+        &:hover {
+          background-color: var(--color-primary-darker, #5b56d6);
+        }
+
+        svg {
+          width: 0.875rem;
+          height: 0.875rem;
+        }
+      }
+
       .close-button {
         background: none;
         border: none;
