@@ -159,6 +159,7 @@ export type ToolType =
   | "hand"
   | "frame"
   | "magicframe"
+  | "animationframe"
   | "embeddable"
   | "laser"
   | "autoshape"

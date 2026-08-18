@@ -981,6 +981,7 @@ const _generateElementShape = (
     }
     case "frame":
     case "magicframe":
+    case "animationframe":
     case "text":
     case "image": {
       const shape: ElementShapes[typeof element.type] = null;
@@ -1076,6 +1077,7 @@ export const getElementShape = <Point extends GlobalPoint | LocalPoint>(
     case "diamond":
     case "frame":
     case "magicframe":
+    case "animationframe":
     case "embeddable":
     case "image":
     case "iframe":

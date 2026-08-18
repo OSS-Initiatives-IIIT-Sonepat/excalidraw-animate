@@ -330,6 +330,7 @@
     "eraser": "Eraser",
     "frame": "Frame tool",
     "magicframe": "Wireframe to code",
+    "animationframe": "Animation Frame tool",
     "embeddable": "Web Embed",
     "laser": "Laser pointer",
     "autoshape": "Draw to shape",
@@ -355,6 +356,7 @@
     "group": "Group",
     "frame": "Frame",
     "magicframe": "Wireframe to code",
+    "animationframe": "Animation Frame",
     "embeddable": "Web Embed",
     "selection": "Selection",
     "iframe": "IFrame"

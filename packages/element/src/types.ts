@@ -170,9 +170,16 @@ export type ExcalidrawMagicFrameElement = _ExcalidrawElementBase & {
   name: string | null;
 };
 
+export type ExcalidrawAnimationFrameElement = _ExcalidrawElementBase & {
+  type: "animationframe";
+  name: string | null;
+  frameIndex: number;
+};
+
 export type ExcalidrawFrameLikeElement =
   | ExcalidrawFrameElement
-  | ExcalidrawMagicFrameElement;
+  | ExcalidrawMagicFrameElement
+  | ExcalidrawAnimationFrameElement;
 
 /**
  * These are elements that don't have any additional properties.
@@ -212,6 +219,7 @@ export type ExcalidrawElement =
   | ExcalidrawImageElement
   | ExcalidrawFrameElement
   | ExcalidrawMagicFrameElement
+  | ExcalidrawAnimationFrameElement
   | ExcalidrawIframeElement
   | ExcalidrawEmbeddableElement;
 

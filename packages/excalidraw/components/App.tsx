@@ -128,6 +128,7 @@ import {
   newFreeDrawElement,
   newEmbeddableElement,
   newMagicFrameElement,
+  newAnimationFrameElement,
   newIframeElement,
   newArrowElement,
   newElement,
@@ -143,6 +144,7 @@ import {
   isBindingElementType,
   isBoundToContainer,
   isFrameLikeElement,
+  isAnimationFrameElement,
   isImageElement,
   isEmbeddableElement,
   isInitializedImageElement,
@@ -2225,55 +2227,100 @@ class App extends React.Component<AppProps, AppState> {
         frameNameJSX = frameName;
       }
 
+      // Compute the right edge position for animation frame index badge
+      const frameIndexBadge = isAnimationFrameElement(f) ? (() => {
+        const { x: x2 } = sceneCoordsToViewportCoords(
+          { sceneX: f.x + f.width, sceneY: f.y },
+          this.state,
+        );
+        return (
+          <div
+            key={`${f.id}-index`}
+            style={{
+              position: "absolute",
+              bottom: `${
+                this.state.height +
+                FRAME_STYLE.nameOffsetY -
+                y1 +
+                this.state.offsetTop
+              }px`,
+              left: `${x2 - this.state.offsetLeft}px`,
+              transform: "translateX(-100%)",
+              zIndex: 2,
+              fontSize: FRAME_STYLE.nameFontSize,
+              color: isDarkTheme
+                ? FRAME_STYLE.nameColorDarkTheme
+                : FRAME_STYLE.nameColorLightTheme,
+              lineHeight: FRAME_STYLE.nameLineHeight,
+              width: "max-content",
+              whiteSpace: "nowrap",
+              cursor: CURSOR_TYPE.MOVE,
+              pointerEvents: this.state.viewModeEnabled
+                ? POINTER_EVENTS.disabled
+                : POINTER_EVENTS.enabled,
+              fontWeight: 600,
+            }}
+            onPointerDown={(event) => this.handleCanvasPointerDown(event)}
+            onWheel={(event) => this.handleWheel(event)}
+            onContextMenu={this.handleCanvasContextMenu}
+          >
+            #{f.frameIndex}
+          </div>
+        );
+      })() : null;
+
       return (
-        <div
-          id={this.getFrameNameDOMId(f)}
-          className={CLASSES.FRAME_NAME}
-          key={f.id}
-          style={{
-            position: "absolute",
-            // Positioning from bottom so that we don't to either
-            // calculate text height or adjust using transform (which)
-            // messes up input position when editing the frame name.
-            // This makes the positioning deterministic and we can calculate
-            // the same position when rendering to canvas / svg.
-            bottom: `${
-              this.state.height +
-              FRAME_STYLE.nameOffsetY -
-              y1 +
-              this.state.offsetTop
-            }px`,
-            left: `${x1 - this.state.offsetLeft}px`,
-            zIndex: 2,
-            fontSize: FRAME_STYLE.nameFontSize,
-            color: isDarkTheme
-              ? FRAME_STYLE.nameColorDarkTheme
-              : FRAME_STYLE.nameColorLightTheme,
-            lineHeight: FRAME_STYLE.nameLineHeight,
-            width: "max-content",
-            maxWidth:
-              focusedSearchMatch?.id === f.id && focusedSearchMatch?.focus
-                ? "none"
-                : `${f.width * this.state.zoom.value}px`,
-            overflow: f.id === this.state.editingFrame ? "visible" : "hidden",
-            whiteSpace: "nowrap",
-            textOverflow: "ellipsis",
-            cursor: CURSOR_TYPE.MOVE,
-            pointerEvents: this.state.viewModeEnabled
-              ? POINTER_EVENTS.disabled
-              : POINTER_EVENTS.enabled,
-          }}
-          onPointerDown={(event) => this.handleCanvasPointerDown(event)}
-          onWheel={(event) => this.handleWheel(event)}
-          onContextMenu={this.handleCanvasContextMenu}
-          onDoubleClick={() => {
-            this.setState({
-              editingFrame: f.id,
-            });
-          }}
-        >
-          {frameNameJSX}
-        </div>
+        <>
+          <div
+            id={this.getFrameNameDOMId(f)}
+            className={CLASSES.FRAME_NAME}
+            key={f.id}
+            style={{
+              position: "absolute",
+              // Positioning from bottom so that we don't to either
+              // calculate text height or adjust using transform (which)
+              // messes up input position when editing the frame name.
+              // This makes the positioning deterministic and we can calculate
+              // the same position when rendering to canvas / svg.
+              bottom: `${
+                this.state.height +
+                FRAME_STYLE.nameOffsetY -
+                y1 +
+                this.state.offsetTop
+              }px`,
+              left: `${x1 - this.state.offsetLeft}px`,
+              zIndex: 2,
+              fontSize: FRAME_STYLE.nameFontSize,
+              color: isDarkTheme
+                ? FRAME_STYLE.nameColorDarkTheme
+                : FRAME_STYLE.nameColorLightTheme,
+              lineHeight: FRAME_STYLE.nameLineHeight,
+              width: "max-content",
+              maxWidth:
+                focusedSearchMatch?.id === f.id && focusedSearchMatch?.focus
+                  ? "none"
+                  : `${f.width * this.state.zoom.value}px`,
+              overflow: f.id === this.state.editingFrame ? "visible" : "hidden",
+              whiteSpace: "nowrap",
+              textOverflow: "ellipsis",
+              cursor: CURSOR_TYPE.MOVE,
+              pointerEvents: this.state.viewModeEnabled
+                ? POINTER_EVENTS.disabled
+                : POINTER_EVENTS.enabled,
+            }}
+            onPointerDown={(event) => this.handleCanvasPointerDown(event)}
+            onWheel={(event) => this.handleWheel(event)}
+            onContextMenu={this.handleCanvasContextMenu}
+            onDoubleClick={() => {
+              this.setState({
+                editingFrame: f.id,
+              });
+            }}
+          >
+            {frameNameJSX}
+          </div>
+          {frameIndexBadge}
+        </>
       );
     });
   };
@@ -8695,7 +8742,8 @@ class App extends React.Component<AppProps, AppState> {
       this.cursor.applyForTool();
     } else if (
       this.state.activeTool.type === TOOL_TYPE.frame ||
-      this.state.activeTool.type === TOOL_TYPE.magicframe
+      this.state.activeTool.type === TOOL_TYPE.magicframe ||
+      this.state.activeTool.type === TOOL_TYPE.animationframe
     ) {
       this.createFrameElementOnPointerDown(
         pointerDownState,
@@ -10338,7 +10386,7 @@ class App extends React.Component<AppProps, AppState> {
 
   private createFrameElementOnPointerDown = (
     pointerDownState: PointerDownState,
-    type: Extract<ToolType, "frame" | "magicframe">,
+    type: Extract<ToolType, "frame" | "magicframe" | "animationframe">,
   ): void => {
     const [gridX, gridY] = getGridPoint(
       pointerDownState.origin.x,
@@ -10359,6 +10407,8 @@ class App extends React.Component<AppProps, AppState> {
     const frame =
       type === TOOL_TYPE.magicframe
         ? newMagicFrameElement(constructorOpts)
+        : type === TOOL_TYPE.animationframe
+        ? newAnimationFrameElement(constructorOpts)
         : newFrameElement(constructorOpts);
 
     this.insertNewElement(frame);
@@ -13277,7 +13327,8 @@ class App extends React.Component<AppProps, AppState> {
     // highlight elements that are to be added to frames on frames creation
     if (
       this.state.activeTool.type === TOOL_TYPE.frame ||
-      this.state.activeTool.type === TOOL_TYPE.magicframe
+      this.state.activeTool.type === TOOL_TYPE.magicframe ||
+      this.state.activeTool.type === TOOL_TYPE.animationframe
     ) {
       this.setState({
         elementsToHighlight: getElementsInResizingFrame(

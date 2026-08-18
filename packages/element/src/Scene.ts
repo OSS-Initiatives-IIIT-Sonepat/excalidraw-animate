@@ -282,7 +282,19 @@ export class Scene {
       validateIndicesThrottled(_nextElements);
     }
 
-    this.elements = syncInvalidIndices(_nextElements);
+    let frameCounter = 1;
+    this.elements = syncInvalidIndices(_nextElements).map((el) => {
+      if (el.type === "animationframe") {
+        if (el.isDeleted) {
+          return el;
+        }
+        if ((el as any).frameIndex !== frameCounter) {
+          (el as any).frameIndex = frameCounter;
+        }
+        frameCounter++;
+      }
+      return el;
+    });
     this.elementsMap.clear();
     this.elements.forEach((element) => {
       if (isFrameLikeElement(element)) {

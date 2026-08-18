@@ -28,6 +28,7 @@ import { mutateElement } from "./mutateElement";
 import { getBoundTextElement, getContainerElement } from "./textElement";
 import { syncMovedIndices } from "./fractionalIndex";
 import {
+  isAnimationFrameElement,
   isFrameElement,
   isFrameLikeElement,
   isTextElement,
@@ -970,8 +971,12 @@ export const shouldApplyFrameClip = (
 
 const DEFAULT_FRAME_NAME = "Frame";
 const DEFAULT_AI_FRAME_NAME = "AI Frame";
+const DEFAULT_ANIMATION_FRAME_NAME = "Animation Frame";
 
 export const getDefaultFrameName = (element: ExcalidrawFrameLikeElement) => {
+  if (isAnimationFrameElement(element)) {
+    return DEFAULT_ANIMATION_FRAME_NAME;
+  }
   // TODO name frames "AI" only if specific to AI frames
   return isFrameElement(element) ? DEFAULT_FRAME_NAME : DEFAULT_AI_FRAME_NAME;
 };

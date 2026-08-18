@@ -29,6 +29,7 @@ import {
   handIcon,
   frameToolIcon,
   EmbedIcon,
+  playerPlayIcon,
 } from "./icons";
 
 import type {
@@ -130,6 +131,11 @@ export const TOOLS = defineTools({
   frame: {
     icon: frameToolIcon,
     letterKey: KEYS.F,
+  },
+  animationframe: {
+    icon: playerPlayIcon,
+    letterKey: KEYS.F,
+    shiftKey: true,
   },
   autoshape: {
     icon: drawShapeToolIcon,
