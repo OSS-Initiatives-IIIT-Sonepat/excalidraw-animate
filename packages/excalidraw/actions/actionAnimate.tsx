@@ -1,6 +1,6 @@
 import { register } from "./register";
 import { getNonDeletedElements, getCommonBounds, CaptureUpdateAction } from "@excalidraw/element";
-import type { ExcalidrawElement, ExcalidrawFrameElement } from "@excalidraw/element/types";
+import type { ExcalidrawElement, ExcalidrawAnimationFrameElement } from "@excalidraw/element/types";
 import { createIcon } from "../components/icons";
 import { centerScrollOn } from "../viewport";
 import { getNormalizedZoom } from "../scene";
@@ -60,7 +60,7 @@ const lerpColor = (colorA: string, colorB: string, t: number): string => {
  */
 const getRelativePos = (
   el: ExcalidrawElement,
-  frame: ExcalidrawFrameElement,
+  frame: ExcalidrawAnimationFrameElement,
 ) => ({
   rx: el.x - frame.x,
   ry: el.y - frame.y,
@@ -75,8 +75,8 @@ const getRelativePos = (
 const matchElements = (
   startEls: ExcalidrawElement[],
   endEls: ExcalidrawElement[],
-  startFrame: ExcalidrawFrameElement,
-  endFrame: ExcalidrawFrameElement,
+  startFrame: ExcalidrawAnimationFrameElement,
+  endFrame: ExcalidrawAnimationFrameElement,
 ): [ExcalidrawElement, ExcalidrawElement][] => {
   const pairs: [ExcalidrawElement, ExcalidrawElement][] = [];
   const usedEndIndices = new Set<number>();
@@ -126,8 +126,8 @@ const matchElements = (
 const tweenElement = (
   startEl: ExcalidrawElement,
   endEl: ExcalidrawElement,
-  startFrame: ExcalidrawFrameElement,
-  endFrame: ExcalidrawFrameElement,
+  startFrame: ExcalidrawAnimationFrameElement,
+  endFrame: ExcalidrawAnimationFrameElement,
   displayFrame: { x: number; y: number; width: number; height: number },
   t: number,
 ): ExcalidrawElement => {
@@ -167,7 +167,7 @@ const tweenElement = (
  * Compute the zoom & scroll to fit a frame into the viewport.
  */
 const getViewportForFrame = (
-  frame: ExcalidrawFrameElement,
+  frame: ExcalidrawAnimationFrameElement,
   appState: AppState,
   padding = 40,
 ): { scrollX: number; scrollY: number; zoom: AppState["zoom"] } => {
@@ -233,11 +233,11 @@ export const actionAnimate = register({
     // ── Gather frames ──
     const nonDeleted = getNonDeletedElements(elements);
     const frames = (
-      nonDeleted.filter((el) => el.type === "frame") as ExcalidrawFrameElement[]
-    ).sort((a, b) => a.x - b.x);
+      nonDeleted.filter((el) => el.type === "animationframe") as ExcalidrawAnimationFrameElement[]
+    ).sort((a, b) => a.frameIndex - b.frameIndex);
 
     if (frames.length < 2) {
-      console.warn("Need at least 2 frames to animate. Create frames (F) and arrange them left-to-right.");
+      console.warn("Need at least 2 animation frames to animate. Create animation frames and arrange them.");
       return { appState, captureUpdate: CaptureUpdateAction.EVENTUALLY };
     }
 
@@ -259,8 +259,8 @@ export const actionAnimate = register({
     // ── Pre-compute matched element pairs for each transition ──
     const transitions: {
       pairs: [ExcalidrawElement, ExcalidrawElement][];
-      startFrame: ExcalidrawFrameElement;
-      endFrame: ExcalidrawFrameElement;
+      startFrame: ExcalidrawAnimationFrameElement;
+      endFrame: ExcalidrawAnimationFrameElement;
     }[] = [];
 
     for (let i = 0; i < frames.length - 1; i++) {

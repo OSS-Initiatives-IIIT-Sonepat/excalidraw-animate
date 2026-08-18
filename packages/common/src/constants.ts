@@ -497,6 +497,7 @@ export const TOOL_TYPE = {
   hand: "hand",
   frame: "frame",
   magicframe: "magicframe",
+  animationframe: "animationframe",
   embeddable: "embeddable",
   laser: "laser",
   autoshape: "autoshape",

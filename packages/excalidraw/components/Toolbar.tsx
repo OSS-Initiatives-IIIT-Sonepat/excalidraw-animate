@@ -15,9 +15,10 @@ import Stack from "./Stack";
 import DropdownMenu from "./dropdownMenu/DropdownMenu";
 import {
   drawShapeToolIcon,
-  EmbedIcon,
-  frameToolIcon,
   LassoIcon,
+  frameToolIcon,
+  playerPlayIcon,
+  EmbedIcon,
   laserPointerToolIcon,
   bucketFillIcon,
   MagicIcon,
@@ -65,6 +66,7 @@ const ExtraToolsDropdown = ({
   const { TTDDialogTriggerTunnel } = useTunnels();
 
   const frameToolSelected = activeTool.type === "frame";
+  const animationframeToolSelected = activeTool.type === "animationframe";
   const drawShapeToolSelected = activeTool.type === "autoshape";
   const laserToolSelected = activeTool.type === "laser";
   const bucketFillToolSelected = activeTool.type === "bucketfill";
@@ -80,6 +82,7 @@ const ExtraToolsDropdown = ({
         className={clsx("App-toolbar__extra-tools-trigger", {
           "App-toolbar__extra-tools-trigger--selected":
             frameToolSelected ||
+            animationframeToolSelected ||
             embeddableToolSelected ||
             (isFullStylesPanel && drawShapeToolSelected) ||
             lassoToolSelected ||
@@ -97,6 +100,8 @@ const ExtraToolsDropdown = ({
       >
         {frameToolSelected
           ? frameToolIcon
+          : animationframeToolSelected
+          ? playerPlayIcon
           : embeddableToolSelected
           ? EmbedIcon
           : isFullStylesPanel && drawShapeToolSelected
@@ -123,6 +128,16 @@ const ExtraToolsDropdown = ({
           disabled={isToolButtonDisabled(app, "frame")}
         >
           {t("toolBar.frame")}
+        </DropdownMenu.Item>
+        <DropdownMenu.Item
+          onSelect={() => app.setActiveTool({ type: "animationframe" })}
+          icon={playerPlayIcon}
+          shortcut={`Shift+${KEYS.F.toLocaleUpperCase()}`}
+          data-testid="toolbar-animationframe"
+          selected={animationframeToolSelected}
+          disabled={isToolButtonDisabled(app, "animationframe")}
+        >
+          {t("toolBar.animationframe")}
         </DropdownMenu.Item>
         <DropdownMenu.Item
           onSelect={() => app.setActiveTool({ type: "embeddable" })}
