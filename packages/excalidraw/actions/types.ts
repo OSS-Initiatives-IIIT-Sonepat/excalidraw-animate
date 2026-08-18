@@ -141,6 +141,7 @@ export type ActionName =
   | "cropEditor"
   | "wrapSelectionInFrame"
   | "toggleShapeSwitch"
+  | "animateFrames"
   | "togglePolygon";
 
 export type PanelComponentProps = {

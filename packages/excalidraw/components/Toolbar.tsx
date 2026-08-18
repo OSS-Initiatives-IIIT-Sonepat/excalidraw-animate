@@ -42,6 +42,7 @@ import {
   SelectionToolPopover,
   TextToolButton,
 } from "./Tools";
+import { playIcon } from "../actions/actionAnimate";
 
 import type {
   AppClassProperties,
@@ -195,6 +196,13 @@ const ExtraToolsDropdown = ({
             {t("toolBar.magicframe")}
           </DropdownMenu.Item>
         )}
+        <DropdownMenu.Item
+          onSelect={() => app.actionManager.executeAction(app.actionManager.actions.animateFrames)}
+          icon={playIcon}
+          data-testid="toolbar-animate"
+        >
+          Animate
+        </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu>
   );
