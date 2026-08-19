@@ -77,11 +77,17 @@ const matchElements = (
   endEls: ExcalidrawElement[],
   startFrame: ExcalidrawAnimationFrameElement,
   endFrame: ExcalidrawAnimationFrameElement,
-): [ExcalidrawElement, ExcalidrawElement][] => {
+): {
+  pairs: [ExcalidrawElement, ExcalidrawElement][];
+  unmatchedStart: ExcalidrawElement[];
+  unmatchedEnd: ExcalidrawElement[];
+} => {
   const pairs: [ExcalidrawElement, ExcalidrawElement][] = [];
+  const usedStartIndices = new Set<number>();
   const usedEndIndices = new Set<number>();
 
-  for (const startEl of startEls) {
+  for (let i = 0; i < startEls.length; i++) {
+    const startEl = startEls[i];
     const startRel = getRelativePos(startEl, startFrame);
     let bestIdx = -1;
     let bestScore = Infinity;
@@ -108,12 +114,16 @@ const matchElements = (
     }
 
     if (bestIdx !== -1) {
+      usedStartIndices.add(i);
       usedEndIndices.add(bestIdx);
       pairs.push([startEl, endEls[bestIdx]]);
     }
   }
 
-  return pairs;
+  const unmatchedStart = startEls.filter((_, i) => !usedStartIndices.has(i));
+  const unmatchedEnd = endEls.filter((_, j) => !usedEndIndices.has(j));
+
+  return { pairs, unmatchedStart, unmatchedEnd };
 };
 
 /**
@@ -259,22 +269,47 @@ export const actionAnimate = register({
     // ── Pre-compute matched element pairs for each transition ──
     const transitions: {
       pairs: [ExcalidrawElement, ExcalidrawElement][];
+      unmatchedStart: ExcalidrawElement[];
+      unmatchedEnd: ExcalidrawElement[];
       startFrame: ExcalidrawAnimationFrameElement;
       endFrame: ExcalidrawAnimationFrameElement;
     }[] = [];
 
     for (let i = 0; i < frames.length - 1; i++) {
+      const result = matchElements(
+        frameChildGroups[i],
+        frameChildGroups[i + 1],
+        frames[i],
+        frames[i + 1],
+      );
       transitions.push({
-        pairs: matchElements(
-          frameChildGroups[i],
-          frameChildGroups[i + 1],
-          frames[i],
-          frames[i + 1],
-        ),
+        pairs: result.pairs,
+        unmatchedStart: result.unmatchedStart,
+        unmatchedEnd: result.unmatchedEnd,
         startFrame: frames[i],
         endFrame: frames[i + 1],
       });
     }
+
+    // ── Helper: position an element from a source frame onto the display frame ──
+    const positionOnDisplay = (
+      el: ExcalidrawElement,
+      sourceFrame: ExcalidrawAnimationFrameElement,
+      displayFr: { x: number; y: number; width: number; height: number },
+    ): ExcalidrawElement => {
+      const rx = (el.x - sourceFrame.x) / sourceFrame.width;
+      const ry = (el.y - sourceFrame.y) / sourceFrame.height;
+      const rw = el.width / sourceFrame.width;
+      const rh = el.height / sourceFrame.height;
+      return {
+        ...el,
+        x: displayFr.x + rx * displayFr.width,
+        y: displayFr.y + ry * displayFr.height,
+        width: rw * displayFr.width,
+        height: rh * displayFr.height,
+        frameId: null,
+      } as ExcalidrawElement;
+    };
 
     // ── Use the first frame as the "display" frame ──
     const displayFrame = frames[0];
@@ -320,11 +355,16 @@ export const actionAnimate = register({
           const finalEls = lastTransition.pairs.map(([startEl, endEl]) =>
             tweenElement(startEl, endEl, lastTransition.startFrame, lastTransition.endFrame, displayFrame, 1),
           );
+          // Show unmatched end elements at full opacity (they've faded in)
+          const fadedInEls = lastTransition.unmatchedEnd.map((el) => ({
+            ...positionOnDisplay(el, lastTransition.endFrame, displayFrame),
+            opacity: el.opacity,
+          }));
           const hiddenOriginals = nonDeleted.map((el) => ({
             ...el,
             opacity: 0,
           }));
-          app.scene.replaceAllElements([...hiddenOriginals, ...finalEls]);
+          app.scene.replaceAllElements([...hiddenOriginals, ...finalEls, ...fadedInEls]);
           // Auto-restore after a brief pause
           setTimeout(() => {
             if (savedElements && savedAppState) {
@@ -337,10 +377,26 @@ export const actionAnimate = register({
           return;
         }
 
-        // Next transition
+        // Next transition — show end frame elements at t=1 during hold
         rawProgress = 0;
         startTime = time;
         phase = "hold";
+
+        // Display the end frame state of the just-completed transition
+        const prevTransition = transitions[currentTransitionIdx - 1];
+        const holdEls = prevTransition.pairs.map(([startEl, endEl]) =>
+          tweenElement(startEl, endEl, prevTransition.startFrame, prevTransition.endFrame, displayFrame, 1),
+        );
+        const fadedInEls = prevTransition.unmatchedEnd.map((el) => ({
+          ...positionOnDisplay(el, prevTransition.endFrame, displayFrame),
+          opacity: el.opacity,
+        }));
+        const hiddenOriginals = nonDeleted.map((el) => ({
+          ...el,
+          opacity: 0,
+        }));
+        app.scene.replaceAllElements([...hiddenOriginals, ...holdEls, ...fadedInEls]);
+
         animationFrameId = requestAnimationFrame(animate);
         return;
       }
@@ -348,7 +404,7 @@ export const actionAnimate = register({
       const t = easeInOutCubic(rawProgress);
       const transition = transitions[currentTransitionIdx];
 
-      // Build tweened elements
+      // Build tweened elements (matched pairs)
       const tweenedEls = transition.pairs.map(([startEl, endEl]) =>
         tweenElement(
           startEl,
@@ -360,18 +416,30 @@ export const actionAnimate = register({
         ),
       );
 
-      // Hide all originals, show only tweened elements
+      // Fade out unmatched start elements (present in start, absent in end)
+      const fadingOutEls = transition.unmatchedStart.map((el) => ({
+        ...positionOnDisplay(el, transition.startFrame, displayFrame),
+        opacity: lerp(el.opacity, 0, t),
+      }));
+
+      // Fade in unmatched end elements (absent in start, present in end)
+      const fadingInEls = transition.unmatchedEnd.map((el) => ({
+        ...positionOnDisplay(el, transition.endFrame, displayFrame),
+        opacity: lerp(0, el.opacity, t),
+      }));
+
+      // Hide all originals, show tweened + fading elements
       const hiddenOriginals = nonDeleted.map((el) => ({
         ...el,
         opacity: 0,
       }));
 
-      app.scene.replaceAllElements([...hiddenOriginals, ...tweenedEls]);
+      app.scene.replaceAllElements([...hiddenOriginals, ...tweenedEls, ...fadingOutEls, ...fadingInEls]);
       animationFrameId = requestAnimationFrame(animate);
     };
 
-    // Start: show frame 1 elements on the display frame
-    const initialEls = transitions[0].pairs.map(([startEl, _endEl]) =>
+    // Start: show ALL frame 1 elements on the display frame
+    const initialPairedEls = transitions[0].pairs.map(([startEl, _endEl]) =>
       tweenElement(
         startEl,
         startEl,
@@ -381,13 +449,18 @@ export const actionAnimate = register({
         0,
       ),
     );
+    // Also show unmatched start elements from the first transition (they exist in frame 1 but not frame 2)
+    const initialUnmatchedEls = transitions[0].unmatchedStart.map((el) => ({
+      ...positionOnDisplay(el, transitions[0].startFrame, displayFrame),
+      opacity: el.opacity,
+    }));
 
     const hiddenOriginals = nonDeleted.map((el) => ({
       ...el,
       opacity: 0,
     }));
 
-    app.scene.replaceAllElements([...hiddenOriginals, ...initialEls]);
+    app.scene.replaceAllElements([...hiddenOriginals, ...initialPairedEls, ...initialUnmatchedEls]);
     animationFrameId = requestAnimationFrame(animate);
 
     return {
