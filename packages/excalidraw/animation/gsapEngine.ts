@@ -148,6 +148,7 @@ export class GsapAnimationEngine {
   private onFrame: OnFrameCallback | null = null;
   private onComplete: OnCompleteCallback | null = null;
   private progressProxy = { progress: 0 };
+  private speed = 1;
 
   /**
    * Build a GSAP timeline from sorted keyframes.
@@ -177,6 +178,7 @@ export class GsapAnimationEngine {
         this.onComplete?.();
       },
     });
+    this.timeline.timeScale(this.speed);
 
     // For each pair of consecutive keyframes, create a tween segment
     for (let i = 0; i < sorted.length - 1; i++) {
@@ -226,30 +228,7 @@ export class GsapAnimationEngine {
     endKf: Keyframe,
     t: number,
   ): ExcalidrawElement[] {
-    const { pairs, unmatchedStart, unmatchedEnd } =
-      matchSnapshotElements(
-        startKf.elementSnapshots,
-        endKf.elementSnapshots,
-      );
-
-    // Interpolate matched pairs
-    const interpolated = pairs.map(([startEl, endEl]) =>
-      interpolateElement(startEl, endEl, t),
-    );
-
-    // Fade out unmatched start elements
-    const fadingOut = unmatchedStart.map((el) => ({
-      ...el,
-      opacity: el.opacity * (1 - t),
-    })) as ExcalidrawElement[];
-
-    // Fade in unmatched end elements
-    const fadingIn = unmatchedEnd.map((el) => ({
-      ...el,
-      opacity: el.opacity * t,
-    })) as ExcalidrawElement[];
-
-    return [...interpolated, ...fadingOut, ...fadingIn];
+    return interpolateKeyframesRaw(startKf, endKf, t);
   }
 
   // ── Playback Controls ──
@@ -304,6 +283,7 @@ export class GsapAnimationEngine {
    * Set playback speed (1 = normal, 0.5 = half, 2 = double).
    */
   setSpeed(speed: number) {
+    this.speed = speed;
     this.timeline?.timeScale(speed);
   }
 
@@ -327,6 +307,65 @@ export class GsapAnimationEngine {
     this.progressProxy = { progress: 0 };
   }
 }
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+
+export const interpolateKeyframesRaw = (
+  startKf: Keyframe,
+  endKf: Keyframe,
+  t: number,
+): ExcalidrawElement[] => {
+  const { pairs, unmatchedStart, unmatchedEnd } =
+    matchSnapshotElements(
+      startKf.elementSnapshots,
+      endKf.elementSnapshots,
+    );
+
+  // Interpolate matched pairs
+  const interpolated = pairs.map(([startEl, endEl]) =>
+    interpolateElement(startEl, endEl, t),
+  );
+
+  // Fade out unmatched start elements
+  const fadingOut = unmatchedStart.map((el) => ({
+    ...el,
+    opacity: el.opacity * (1 - t),
+  })) as ExcalidrawElement[];
+
+  // Fade in unmatched end elements
+  const fadingIn = unmatchedEnd.map((el) => ({
+    ...el,
+    opacity: el.opacity * t,
+  })) as ExcalidrawElement[];
+
+  return [...interpolated, ...fadingOut, ...fadingIn];
+};
+
+export const getElementsAtTime = (keyframes: Keyframe[], time: number): ExcalidrawElement[] | null => {
+  if (keyframes.length === 0) return null;
+  if (keyframes.length === 1) return keyframes[0].elementSnapshots.map(el => ({ ...el })) as ExcalidrawElement[];
+  
+  const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+  if (time <= sorted[0].time) return sorted[0].elementSnapshots.map(el => ({ ...el })) as ExcalidrawElement[];
+  if (time >= sorted[sorted.length - 1].time) return sorted[sorted.length - 1].elementSnapshots.map(el => ({ ...el })) as ExcalidrawElement[];
+  
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const startKf = sorted[i];
+    const endKf = sorted[i + 1];
+    if (time >= startKf.time && time < endKf.time) {
+      const segmentDuration = endKf.time - startKf.time;
+      let t = (time - startKf.time) / segmentDuration;
+      
+      const ease = gsap.parseEase(startKf.easing || "power2.inOut");
+      if (ease) {
+        t = ease(t);
+      }
+      
+      return interpolateKeyframesRaw(startKf, endKf, t);
+    }
+  }
+  return null;
+};
 
 // ─── Singleton ────────────────────────────────────────────────────────────────
 

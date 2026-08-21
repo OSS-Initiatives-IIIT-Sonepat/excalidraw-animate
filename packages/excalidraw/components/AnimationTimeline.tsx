@@ -16,7 +16,11 @@ import {
 import {
   GsapAnimationEngine,
   getGsapEngine,
+  getElementsAtTime,
 } from "../animation/gsapEngine";
+import { getCommonBounds } from "@excalidraw/element";
+import { centerScrollOn } from "../viewport";
+import { getNormalizedZoom } from "../scene";
 
 import "./AnimationTimeline.scss";
 
@@ -174,7 +178,8 @@ export const AnimationTimeline = ({
 
   // ── Computed values ──
 
-  const { keyframes, duration, currentTime, pixelsPerSecond } = storeState;
+  const { duration, currentTime, pixelsPerSecond, activeFrameId } = storeState;
+  const keyframes = store.getActiveKeyframes();
   const trackWidth = duration * pixelsPerSecond;
 
   // Generate ruler marks
@@ -194,6 +199,58 @@ export const AnimationTimeline = ({
 
   // ── Handlers ──
 
+  // Sync visibility with appState
+  useEffect(() => {
+    if (appState.openAnimationPanel !== storeState.isOpen) {
+      store.setOpen(!!appState.openAnimationPanel);
+    }
+  }, [appState.openAnimationPanel, storeState.isOpen, store]);
+
+  // Determine active frame ID based on selection
+  useEffect(() => {
+    const selectedIds = Object.keys(appState.selectedElementIds).filter(
+      (id) => appState.selectedElementIds[id],
+    );
+
+    let foundFrameId: string | null = null;
+    
+    if (selectedIds.length > 0) {
+      const firstSelected = elements.find((el) => el.id === selectedIds[0]);
+      if (firstSelected) {
+        if (firstSelected.type === "animationframe") {
+          foundFrameId = firstSelected.id;
+        } else if (firstSelected.frameId) {
+          const parentFrame = elements.find((el) => el.id === firstSelected.frameId);
+          if (parentFrame && parentFrame.type === "animationframe") {
+            foundFrameId = parentFrame.id;
+          }
+        }
+      }
+    }
+
+    if (foundFrameId && foundFrameId !== storeState.activeFrameId) {
+      store.setActiveFrameId(foundFrameId);
+    }
+  }, [appState.selectedElementIds, elements, storeState.activeFrameId, store]);
+
+  const seekToTime = useCallback((time: number) => {
+    store.setCurrentTime(time);
+    if (engine.isActive()) {
+      engine.seek(time);
+    } else {
+      const interpolatedElements = getElementsAtTime(keyframes, time);
+      if (interpolatedElements) {
+        const sceneElements = app.scene.getElementsIncludingDeleted();
+        const merged = sceneElements.map(el => {
+          const interpolated = interpolatedElements.find(i => i.id === el.id);
+          return interpolated || el;
+        });
+        const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
+        app.scene.replaceAllElements([...merged, ...newElements]);
+      }
+    }
+  }, [store, engine, keyframes, app]);
+
   const getTimeFromMouseX = useCallback(
     (clientX: number): number => {
       if (!trackContainerRef.current) return 0;
@@ -207,9 +264,11 @@ export const AnimationTimeline = ({
   );
 
   const handleAddKeyframe = useCallback(() => {
-    // Capture current canvas elements as a snapshot
+    if (!activeFrameId) return;
+    // Capture current canvas elements as a snapshot, only for the active frame
     const currentElements = app.scene
       .getNonDeletedElements()
+      .filter((el: ExcalidrawElement) => el.frameId === activeFrameId)
       .map((el: ExcalidrawElement) => ({ ...el }));
     const kfCount = keyframes.length + 1;
     store.addKeyframe(
@@ -217,7 +276,7 @@ export const AnimationTimeline = ({
       currentElements,
       `Scene ${kfCount}`,
     );
-  }, [app, store, currentTime, keyframes.length]);
+  }, [app, store, currentTime, keyframes.length, activeFrameId]);
 
   const handleRemoveKeyframe = useCallback(
     (id: string) => {
@@ -234,9 +293,9 @@ export const AnimationTimeline = ({
     (e: React.MouseEvent, kf: Keyframe) => {
       e.stopPropagation();
       setSelectedKeyframeId(kf.id);
-      store.setCurrentTime(kf.time);
+      seekToTime(kf.time);
     },
-    [store],
+    [seekToTime],
   );
 
   const handleKeyframeContextMenu = useCallback(
@@ -276,9 +335,9 @@ export const AnimationTimeline = ({
     (e: React.MouseEvent) => {
       if (isDraggingKeyframe) return;
       const time = getTimeFromMouseX(e.clientX);
-      store.setCurrentTime(time);
+      seekToTime(time);
     },
-    [store, getTimeFromMouseX, isDraggingKeyframe],
+    [getTimeFromMouseX, isDraggingKeyframe, seekToTime],
   );
 
   const handlePlayheadDragStart = useCallback(
@@ -291,9 +350,7 @@ export const AnimationTimeline = ({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!playheadDragRef.current) return;
         const time = getTimeFromMouseX(moveEvent.clientX);
-        store.setCurrentTime(time);
-        // If we have a built engine, seek to this time
-        engine.seek(time);
+        seekToTime(time);
       };
 
       const handleMouseUp = () => {
@@ -343,13 +400,54 @@ export const AnimationTimeline = ({
     savedElementsRef.current = [...app.scene.getElementsIncludingDeleted()];
     savedAppStateRef.current = {
       viewModeEnabled: (appState as any).viewModeEnabled,
+      scrollX: (appState as any).scrollX,
+      scrollY: (appState as any).scrollY,
+      zoom: (appState as any).zoom,
     };
+
+    // Calculate viewport to focus on elements
+    const allElements = keyframes.flatMap((kf: Keyframe) => kf.elementSnapshots) as ExcalidrawElement[];
+    if (allElements.length > 0) {
+      const bounds = getCommonBounds(allElements);
+      const [minX, minY, maxX, maxY] = bounds;
+      const width = maxX - minX;
+      const height = maxY - minY;
+      
+      const padding = 40;
+      const effectiveWidth = appState.width - padding * 2;
+      const effectiveHeight = appState.height - padding * 2;
+
+      const zoomX = effectiveWidth / Math.max(width, 1);
+      const zoomY = effectiveHeight / Math.max(height, 1);
+      const zoomValue = getNormalizedZoom(Math.min(zoomX, zoomY, 1));
+
+      const centerX = minX + width / 2;
+      const centerY = minY + height / 2;
+
+      const scroll = centerScrollOn({
+        scenePoint: { x: centerX, y: centerY },
+        viewportDimensions: { width: appState.width, height: appState.height },
+        zoom: { value: zoomValue },
+      });
+
+      setAppState({
+        scrollX: scroll.scrollX,
+        scrollY: scroll.scrollY,
+        zoom: { value: zoomValue },
+      });
+    }
 
     // Build and play
     engine.build(
       keyframes,
       (interpolatedElements, time) => {
-        app.scene.replaceAllElements(interpolatedElements);
+        const sceneElements = savedElementsRef.current || app.scene.getElementsIncludingDeleted();
+        const merged = sceneElements.map(el => {
+          const interpolated = interpolatedElements.find(i => i.id === el.id);
+          return interpolated || el;
+        });
+        const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
+        app.scene.replaceAllElements([...merged, ...newElements]);
         store.setCurrentTime(time);
       },
       () => {
@@ -385,21 +483,15 @@ export const AnimationTimeline = ({
   }, [keyframes, isPlaying, engine, store, app, appState, setAppState]);
 
   const handleSkipStart = useCallback(() => {
-    store.setCurrentTime(0);
-    if (engine.isActive()) {
-      engine.seek(0);
-    }
-  }, [store, engine]);
+    seekToTime(0);
+  }, [seekToTime]);
 
   const handleSkipEnd = useCallback(() => {
     const lastKf = keyframes[keyframes.length - 1];
     if (lastKf) {
-      store.setCurrentTime(lastKf.time);
-      if (engine.isActive()) {
-        engine.seek(lastKf.time);
-      }
+      seekToTime(lastKf.time);
     }
-  }, [store, engine, keyframes]);
+  }, [seekToTime, keyframes]);
 
   const handleSpeedChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -437,14 +529,23 @@ export const AnimationTimeline = ({
     [store, pixelsPerSecond],
   );
 
-  // Don't render if not open
-  if (!storeState.isOpen && !(appState as any).openAnimationPanel) {
+  if (!storeState.isOpen) {
     return null;
   }
 
-  // Keep store in sync with appState
-  if ((appState as any).openAnimationPanel && !storeState.isOpen) {
-    store.setOpen(true);
+  if (!activeFrameId) {
+    return (
+      <div className="animation-timeline">
+        <div className="animation-timeline__controls" style={{ justifyContent: 'space-between' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--color-gray-50)', fontWeight: 500, padding: '0 0.5rem' }}>
+            Select an animation frame on the canvas to edit its timeline.
+          </div>
+          <button className="animation-timeline__close-btn" onClick={handleClose} title="Close timeline">
+            <CloseIcon />
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // ── Last keyframe time for the filled track ──
@@ -610,7 +711,7 @@ export const AnimationTimeline = ({
             )}
 
             {/* Keyframe diamonds */}
-            {keyframes.map((kf) => (
+            {keyframes.map((kf: Keyframe) => (
               <React.Fragment key={kf.id}>
                 <div
                   className={`animation-timeline__keyframe ${selectedKeyframeId === kf.id ? "animation-timeline__keyframe--selected" : ""} ${isDraggingKeyframe ? "animation-timeline__keyframe--dragging" : ""}`}
@@ -662,6 +763,7 @@ export const AnimationTimeline = ({
               // Update snapshot with current canvas
               const currentElements = app.scene
                 .getNonDeletedElements()
+                .filter((el: ExcalidrawElement) => el.frameId === activeFrameId)
                 .map((el: ExcalidrawElement) => ({ ...el }));
               store.updateKeyframeSnapshot(
                 contextMenu.keyframeId,
