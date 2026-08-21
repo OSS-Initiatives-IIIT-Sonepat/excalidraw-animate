@@ -82,8 +82,8 @@ export const actionAnimate = register({
     }
 
     // ── Check for timeline keyframes first ──
-    const timelineState = store.getState();
-    if (timelineState.keyframes.length >= 2) {
+    let activeKeyframes = store.getActiveKeyframes();
+    if (activeKeyframes.length >= 2) {
       // Use GSAP timeline-based animation
       savedElements = [...elements];
       savedAppState = {
@@ -97,9 +97,15 @@ export const actionAnimate = register({
       isAnimating = true;
 
       engine.build(
-        timelineState.keyframes,
+        activeKeyframes,
         (interpolatedElements, time) => {
-          app.scene.replaceAllElements(interpolatedElements);
+          const sceneElements = savedElements || app.scene.getElementsIncludingDeleted();
+          const merged = sceneElements.map(el => {
+            const interpolated = interpolatedElements.find(i => i.id === el.id);
+            return interpolated || el;
+          });
+          const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
+          app.scene.replaceAllElements([...merged, ...newElements]);
           store.setCurrentTime(time);
         },
         () => {
@@ -147,6 +153,7 @@ export const actionAnimate = register({
     );
 
     // Clear existing keyframes and auto-generate from frames
+    store.setActiveFrameId("legacy-playback");
     store.clearKeyframes();
     frames.forEach((frame, index) => {
       const time = index * 2; // 2 seconds between each frame
@@ -165,11 +172,17 @@ export const actionAnimate = register({
 
     isAnimating = true;
 
-    const updatedState = store.getState();
+    const updatedKeyframes = store.getActiveKeyframes();
     engine.build(
-      updatedState.keyframes,
+      updatedKeyframes,
       (interpolatedElements, time) => {
-        app.scene.replaceAllElements(interpolatedElements);
+        const sceneElements = savedElements || app.scene.getElementsIncludingDeleted();
+        const merged = sceneElements.map(el => {
+          const interpolated = interpolatedElements.find(i => i.id === el.id);
+          return interpolated || el;
+        });
+        const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
+        app.scene.replaceAllElements([...merged, ...newElements]);
         store.setCurrentTime(time);
       },
       () => {

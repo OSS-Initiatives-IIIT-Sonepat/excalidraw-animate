@@ -16,7 +16,8 @@ export interface Keyframe {
 }
 
 export interface TimelineState {
-  keyframes: Keyframe[];
+  keyframesByFrame: Record<string, Keyframe[]>;
+  activeFrameId: string | null;
   /** Total duration in seconds (default 60, user-adjustable) */
   duration: number;
   /** Current playhead position in seconds */
@@ -39,7 +40,8 @@ const MIN_DURATION = 5;
 const MAX_DURATION = 600; // 10 minutes max
 
 export const createDefaultTimelineState = (): TimelineState => ({
-  keyframes: [],
+  keyframesByFrame: {},
+  activeFrameId: null,
   duration: DEFAULT_DURATION,
   currentTime: 0,
   isPlaying: false,
@@ -79,12 +81,35 @@ export class TimelineStore {
 
   // ── Keyframe Operations ──
 
+  setActiveFrameId(frameId: string | null) {
+    if (this.state.activeFrameId !== frameId) {
+      this.setState({ activeFrameId: frameId, currentTime: 0, isPlaying: false });
+    }
+  }
+
+  getActiveKeyframes(): Keyframe[] {
+    if (!this.state.activeFrameId) return [];
+    return this.state.keyframesByFrame[this.state.activeFrameId] || [];
+  }
+
+  private setActiveKeyframes(keyframes: Keyframe[]) {
+    if (!this.state.activeFrameId) return;
+    this.setState({
+      keyframesByFrame: {
+        ...this.state.keyframesByFrame,
+        [this.state.activeFrameId]: keyframes,
+      },
+    });
+  }
+
   addKeyframe(
     time: number,
     elements: readonly ExcalidrawElement[],
     label?: string,
     easing: string = "power2.inOut",
-  ): Keyframe {
+  ): Keyframe | null {
+    if (!this.state.activeFrameId) return null;
+
     // Deep clone elements to create a snapshot
     const snapshot = elements.map((el) => ({ ...el }));
     const keyframe: Keyframe = {
@@ -95,38 +120,39 @@ export class TimelineStore {
       easing,
     };
 
-    const keyframes = [...this.state.keyframes, keyframe].sort(
+    const currentKeyframes = this.getActiveKeyframes();
+    const keyframes = [...currentKeyframes, keyframe].sort(
       (a, b) => a.time - b.time,
     );
-    this.setState({ keyframes });
+    this.setActiveKeyframes(keyframes);
     return keyframe;
   }
 
   removeKeyframe(id: string) {
-    const keyframes = this.state.keyframes.filter((kf) => kf.id !== id);
-    this.setState({ keyframes });
+    const keyframes = this.getActiveKeyframes().filter((kf) => kf.id !== id);
+    this.setActiveKeyframes(keyframes);
   }
 
   moveKeyframe(id: string, newTime: number) {
     const clampedTime = Math.max(0, Math.min(newTime, this.state.duration));
-    const keyframes = this.state.keyframes
+    const keyframes = this.getActiveKeyframes()
       .map((kf) => (kf.id === id ? { ...kf, time: clampedTime } : kf))
       .sort((a, b) => a.time - b.time);
-    this.setState({ keyframes });
+    this.setActiveKeyframes(keyframes);
   }
 
   updateKeyframeLabel(id: string, label: string) {
-    const keyframes = this.state.keyframes.map((kf) =>
+    const keyframes = this.getActiveKeyframes().map((kf) =>
       kf.id === id ? { ...kf, label } : kf,
     );
-    this.setState({ keyframes });
+    this.setActiveKeyframes(keyframes);
   }
 
   updateKeyframeEasing(id: string, easing: string) {
-    const keyframes = this.state.keyframes.map((kf) =>
+    const keyframes = this.getActiveKeyframes().map((kf) =>
       kf.id === id ? { ...kf, easing } : kf,
     );
-    this.setState({ keyframes });
+    this.setActiveKeyframes(keyframes);
   }
 
   updateKeyframeSnapshot(
@@ -134,10 +160,10 @@ export class TimelineStore {
     elements: readonly ExcalidrawElement[],
   ) {
     const snapshot = elements.map((el) => ({ ...el }));
-    const keyframes = this.state.keyframes.map((kf) =>
+    const keyframes = this.getActiveKeyframes().map((kf) =>
       kf.id === id ? { ...kf, elementSnapshots: snapshot } : kf,
     );
-    this.setState({ keyframes });
+    this.setActiveKeyframes(keyframes);
   }
 
   /**
@@ -147,7 +173,7 @@ export class TimelineStore {
   getSurroundingKeyframes(
     time: number,
   ): [Keyframe | null, Keyframe | null] {
-    const { keyframes } = this.state;
+    const keyframes = this.getActiveKeyframes();
     if (keyframes.length === 0) return [null, null];
 
     let before: Keyframe | null = null;
@@ -227,7 +253,7 @@ export class TimelineStore {
 
   /** Clear all keyframes but keep configuration */
   clearKeyframes() {
-    this.setState({ keyframes: [], currentTime: 0, isPlaying: false });
+    this.setState({ keyframesByFrame: {}, currentTime: 0, isPlaying: false });
   }
 }
 
