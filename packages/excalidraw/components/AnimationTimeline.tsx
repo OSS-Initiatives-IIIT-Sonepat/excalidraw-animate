@@ -102,6 +102,8 @@ const DiamondIcon = () => (
 const TrashIcon = () => (
   <svg
     viewBox="0 0 24 24"
+    width="12"
+    height="12"
     fill="none"
     stroke="currentColor"
     strokeWidth="2"
@@ -144,11 +146,6 @@ export const AnimationTimeline = ({
   const [selectedKeyframeId, setSelectedKeyframeId] = useState<
     string | null
   >(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    keyframeId: string;
-  } | null>(null);
   const [isDraggingKeyframe, setIsDraggingKeyframe] = useState(false);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -167,14 +164,6 @@ export const AnimationTimeline = ({
     const unsub = store.subscribe(setStoreState);
     return unsub;
   }, [store]);
-
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handleClick = () => setContextMenu(null);
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, [contextMenu]);
 
   // ── Computed values ──
 
@@ -284,10 +273,15 @@ export const AnimationTimeline = ({
       if (selectedKeyframeId === id) {
         setSelectedKeyframeId(null);
       }
-      setContextMenu(null);
     },
     [store, selectedKeyframeId],
   );
+
+  const handleDeleteSelectedKeyframe = useCallback(() => {
+    if (selectedKeyframeId) {
+      handleRemoveKeyframe(selectedKeyframeId);
+    }
+  }, [selectedKeyframeId, handleRemoveKeyframe]);
 
   const handleKeyframeClick = useCallback(
     (e: React.MouseEvent, kf: Keyframe) => {
@@ -296,31 +290,6 @@ export const AnimationTimeline = ({
       seekToTime(kf.time);
     },
     [seekToTime],
-  );
-
-  const handleKeyframeContextMenu = useCallback(
-    (e: React.MouseEvent, kf: Keyframe) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Estimated context menu dimensions (min-width: 160px, ~2 items ~80px)
-      const menuWidth = 220;
-      const menuHeight = 90;
-      const margin = 8;
-
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-
-      // Clamp so the menu never overflows any edge of the viewport
-      const x = Math.min(e.clientX, vw - menuWidth - margin);
-      const y = Math.min(
-        Math.max(e.clientY, margin),
-        vh - menuHeight - margin,
-      );
-
-      setContextMenu({ x, y, keyframeId: kf.id });
-    },
-    [],
   );
 
   const handleKeyframeDragStart = useCallback(
@@ -617,6 +586,17 @@ export const AnimationTimeline = ({
             Keyframe
           </button>
 
+          {selectedKeyframeId && (
+            <button
+              className="animation-timeline__delete-keyframe-btn"
+              onClick={handleDeleteSelectedKeyframe}
+              title="Delete selected keyframe"
+            >
+              <TrashIcon />
+              Delete
+            </button>
+          )}
+
           <div className="animation-timeline__divider" />
 
           <select
@@ -737,9 +717,6 @@ export const AnimationTimeline = ({
                   className={`animation-timeline__keyframe ${selectedKeyframeId === kf.id ? "animation-timeline__keyframe--selected" : ""} ${isDraggingKeyframe ? "animation-timeline__keyframe--dragging" : ""}`}
                   style={{ left: kf.time * pixelsPerSecond }}
                   onClick={(e) => handleKeyframeClick(e, kf)}
-                  onContextMenu={(e) =>
-                    handleKeyframeContextMenu(e, kf)
-                  }
                   onMouseDown={(e) => handleKeyframeDragStart(e, kf)}
                   title={`${kf.label || "Keyframe"} at ${formatTime(kf.time)}`}
                 />
@@ -770,45 +747,7 @@ export const AnimationTimeline = ({
         </div>
       </div>
 
-      {/* ── Context Menu ── */}
-      {contextMenu && (
-        <div
-          className="animation-timeline__context-menu"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            className="animation-timeline__context-menu-item"
-            onClick={(e) => {
-              e.stopPropagation();
-              // Update snapshot with current canvas
-              const currentElements = app.scene
-                .getNonDeletedElements()
-                .filter((el: ExcalidrawElement) => el.frameId === activeFrameId)
-                .map((el: ExcalidrawElement) => ({ ...el }));
-              store.updateKeyframeSnapshot(
-                contextMenu.keyframeId,
-                currentElements,
-              );
-              setContextMenu(null);
-            }}
-          >
-            <DiamondIcon />
-            Update Snapshot
-          </button>
-          <button
-            className="animation-timeline__context-menu-item animation-timeline__context-menu-item--danger"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleRemoveKeyframe(contextMenu.keyframeId);
-            }}
-          >
-            <TrashIcon />
-            Delete Keyframe
-          </button>
-        </div>
-      )}
+
     </>
   );
 };
