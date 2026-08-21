@@ -56,7 +56,7 @@ import { JSONExportDialog } from "./JSONExportDialog";
 import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
 import { Toolbar } from "./Toolbar";
-import { AnimationFramesPanel } from "./AnimationFramesPanel";
+import { AnimationTimeline } from "./AnimationTimeline";
 
 import "./LayerUI.scss";
 import "./Toolbar.scss";
@@ -406,26 +406,22 @@ const LayerUI = ({
               />
             )}
             <button
+              className={`animation-timeline-toggle ${appState.openAnimationPanel ? "animation-timeline-toggle--active" : ""}`}
               onClick={() =>
                 setAppState({
                   openAnimationPanel: !appState.openAnimationPanel,
                 })
               }
-              title="Toggle Animation Frames Panel"
-              style={{
-                marginRight: "0.5rem",
-                padding: "0.4rem 0.75rem",
-                borderRadius: "var(--border-radius-md, 8px)",
-                border: appState.openAnimationPanel ? "2px solid var(--color-primary, #6965db)" : "1px solid var(--color-gray-30, #ccc)",
-                background: appState.openAnimationPanel ? "var(--color-primary-light, #e0dfff)" : "var(--island-bg-color, #fff)",
-                color: "var(--text-primary-color, #1b1b1f)",
-                cursor: "pointer",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                whiteSpace: "nowrap" as const,
-              }}
+              title="Toggle Animation Timeline"
             >
-              ▶ Frames
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="4" rx="1" />
+                <rect x="2" y="9" width="20" height="4" rx="1" />
+                <rect x="2" y="15" width="20" height="4" rx="1" />
+                <circle cx="7" cy="11" r="1.5" fill="currentColor" />
+                <circle cx="14" cy="11" r="1.5" fill="currentColor" />
+              </svg>
+              Timeline
             </button>
             {renderTopRightUI?.(
               editorInterface.formFactor === "phone",
@@ -638,7 +634,7 @@ const LayerUI = ({
           >
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
-            <AnimationFramesPanel
+            <AnimationTimeline
               elements={elements}
               appState={appState}
               setAppState={setAppState}

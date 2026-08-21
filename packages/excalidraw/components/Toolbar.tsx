@@ -216,14 +216,14 @@ const ExtraToolsDropdown = ({
           icon={playIcon}
           data-testid="toolbar-animate"
         >
-          Animate
+          Animate (GSAP)
         </DropdownMenu.Item>
         <DropdownMenu.Item
           onSelect={() => setAppState({ openAnimationPanel: !app.state.openAnimationPanel })}
           icon={playerPlayIcon}
           data-testid="toolbar-frames-panel"
         >
-          {app.state.openAnimationPanel ? "Hide Frames Panel" : "Show Frames Panel"}
+          {app.state.openAnimationPanel ? "Hide Timeline" : "Show Timeline"}
         </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu>
