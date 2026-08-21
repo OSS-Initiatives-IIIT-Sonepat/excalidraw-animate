@@ -16,19 +16,21 @@ export const playIcon = createIcon(
   { width: 24, height: 24 },
 );
 
-/**
- * Compute the zoom & scroll to fit a frame into the viewport.
- */
 const getViewportForFrame = (
   frame: ExcalidrawAnimationFrameElement,
   appState: AppState,
-  padding = 40,
 ): { scrollX: number; scrollY: number; zoom: AppState["zoom"] } => {
-  const effectiveWidth = appState.width - padding * 2;
-  const effectiveHeight = appState.height - padding * 2;
+  // Use a generous padding so the frame doesn't hug the screen edges
+  const paddingX = Math.max(200, appState.width * 0.25);
+  const paddingY = Math.max(200, appState.height * 0.25);
+
+  const effectiveWidth = appState.width - paddingX * 2;
+  const effectiveHeight = appState.height - paddingY * 2;
 
   const zoomX = effectiveWidth / frame.width;
   const zoomY = effectiveHeight / frame.height;
+  
+  // Cap the zoom to 1 so small frames don't blow up too much
   const zoomValue = getNormalizedZoom(Math.min(zoomX, zoomY, 1));
 
   const centerX = frame.x + frame.width / 2;
@@ -38,6 +40,7 @@ const getViewportForFrame = (
     scenePoint: { x: centerX, y: centerY },
     viewportDimensions: { width: appState.width, height: appState.height },
     zoom: { value: zoomValue },
+    offsets: { bottom: 200 },
   });
 
   return {

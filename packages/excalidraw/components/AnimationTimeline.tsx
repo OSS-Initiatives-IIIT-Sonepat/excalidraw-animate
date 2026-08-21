@@ -429,9 +429,12 @@ export const AnimationTimeline = ({
       const width = maxX - minX;
       const height = maxY - minY;
       
-      const padding = 40;
-      const effectiveWidth = appState.width - padding * 2;
-      const effectiveHeight = appState.height - padding * 2;
+      // Use a generous padding so the animation doesn't hug the screen edges
+      const paddingX = Math.max(200, appState.width * 0.25);
+      const paddingY = Math.max(200, appState.height * 0.25);
+
+      const effectiveWidth = appState.width - paddingX * 2;
+      const effectiveHeight = appState.height - paddingY * 2;
 
       const zoomX = effectiveWidth / Math.max(width, 1);
       const zoomY = effectiveHeight / Math.max(height, 1);
@@ -444,6 +447,7 @@ export const AnimationTimeline = ({
         scenePoint: { x: centerX, y: centerY },
         viewportDimensions: { width: appState.width, height: appState.height },
         zoom: { value: zoomValue },
+        offsets: { bottom: 200 },
       });
 
       setAppState({
