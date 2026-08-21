@@ -243,7 +243,23 @@ export const AnimationTimeline = ({
     (e: React.MouseEvent, kf: Keyframe) => {
       e.preventDefault();
       e.stopPropagation();
-      setContextMenu({ x: e.clientX, y: e.clientY, keyframeId: kf.id });
+
+      // Estimated context menu dimensions (min-width: 160px, ~2 items ~80px)
+      const menuWidth = 220;
+      const menuHeight = 90;
+      const margin = 8;
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      // Clamp so the menu never overflows any edge of the viewport
+      const x = Math.min(e.clientX, vw - menuWidth - margin);
+      const y = Math.min(
+        Math.max(e.clientY, margin),
+        vh - menuHeight - margin,
+      );
+
+      setContextMenu({ x, y, keyframeId: kf.id });
     },
     [],
   );
@@ -655,10 +671,12 @@ export const AnimationTimeline = ({
           className="animation-timeline__context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <button
             className="animation-timeline__context-menu-item"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               // Update snapshot with current canvas
               const currentElements = app.scene
                 .getNonDeletedElements()
@@ -675,7 +693,10 @@ export const AnimationTimeline = ({
           </button>
           <button
             className="animation-timeline__context-menu-item animation-timeline__context-menu-item--danger"
-            onClick={() => handleRemoveKeyframe(contextMenu.keyframeId)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRemoveKeyframe(contextMenu.keyframeId);
+            }}
           >
             <TrashIcon />
             Delete Keyframe
