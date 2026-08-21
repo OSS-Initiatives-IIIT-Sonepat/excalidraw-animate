@@ -113,6 +113,20 @@ const TrashIcon = () => (
   </svg>
 );
 
+const UpdateIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="23 4 23 10 17 10" />
+    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+  </svg>
+);
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const formatTime = (seconds: number): string => {
@@ -181,6 +195,7 @@ export const AnimationTimeline = ({
   const { duration, currentTime, pixelsPerSecond, activeFrameId } = storeState;
   const keyframes = store.getActiveKeyframes();
   const trackWidth = duration * pixelsPerSecond;
+  const existingKf = keyframes.find(kf => Math.abs(kf.time - currentTime) < 0.05);
 
   // Generate ruler marks
   const rulerMarks = useMemo(() => {
@@ -270,13 +285,18 @@ export const AnimationTimeline = ({
       .getNonDeletedElements()
       .filter((el: ExcalidrawElement) => el.frameId === activeFrameId)
       .map((el: ExcalidrawElement) => ({ ...el }));
-    const kfCount = keyframes.length + 1;
-    store.addKeyframe(
-      currentTime,
-      currentElements,
-      `Scene ${kfCount}`,
-    );
-  }, [app, store, currentTime, keyframes.length, activeFrameId]);
+      
+    if (existingKf) {
+      store.updateKeyframeSnapshot(existingKf.id, currentElements);
+    } else {
+      const kfCount = keyframes.length + 1;
+      store.addKeyframe(
+        currentTime,
+        currentElements,
+        `Scene ${kfCount}`,
+      );
+    }
+  }, [app, store, currentTime, keyframes, activeFrameId, existingKf]);
 
   const handleRemoveKeyframe = useCallback(
     (id: string) => {
@@ -605,12 +625,12 @@ export const AnimationTimeline = ({
           <div className="animation-timeline__divider" />
 
           <button
-            className="animation-timeline__add-keyframe-btn"
+            className={`animation-timeline__add-keyframe-btn ${existingKf ? "animation-timeline__add-keyframe-btn--update" : ""}`}
             onClick={handleAddKeyframe}
-            title="Add keyframe at current time"
+            title={existingKf ? "Update keyframe at current time" : "Add keyframe at current time"}
           >
-            <PlusIcon />
-            Keyframe
+            {existingKf ? <UpdateIcon /> : <PlusIcon />}
+            {existingKf ? "Update" : "Keyframe"}
           </button>
 
           <div className="animation-timeline__divider" />
