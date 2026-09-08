@@ -223,6 +223,7 @@ export const AllowedExcalidrawActiveTools: Record<
   laser: false,
   autoshape: false,
   magicframe: false,
+  animationframe: true,
   bucketfill: true,
 };
 
@@ -704,6 +705,11 @@ export const restoreElement = (
     case "frame":
       return restoreElementWithProperties(element, {
         name: element.name ?? null,
+      });
+    case "animationframe":
+      return restoreElementWithProperties(element, {
+        name: element.name ?? null,
+        frameIndex: element.frameIndex ?? 1,
       });
 
     // Don't use default case so as to catch a missing an element type case.

@@ -159,6 +159,7 @@ export type ToolType =
   | "hand"
   | "frame"
   | "magicframe"
+  | "animationframe"
   | "embeddable"
   | "laser"
   | "autoshape"
@@ -453,6 +454,7 @@ export interface AppState {
     | "compactArrowProperties"
     | null;
   openSidebar: { name: SidebarName; tab?: SidebarTabName } | null;
+  openAnimationPanel: boolean;
   openDialog:
     | null
     | { name: "imageExport" | "help" | "jsonExport" }
@@ -1096,6 +1098,7 @@ export type AppClassProperties = {
   files: BinaryFiles;
   editorInterface: App["editorInterface"];
   scene: App["scene"];
+  actionManager: App["actionManager"];
   syncActionResult: App["syncActionResult"];
   fonts: App["fonts"];
   pasteFromClipboard: App["pasteFromClipboard"];

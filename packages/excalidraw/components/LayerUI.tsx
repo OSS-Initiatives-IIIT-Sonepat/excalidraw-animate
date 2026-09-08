@@ -56,6 +56,7 @@ import { JSONExportDialog } from "./JSONExportDialog";
 import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
 import { Toolbar } from "./Toolbar";
+import { AnimationTimeline } from "./AnimationTimeline";
 
 import "./LayerUI.scss";
 import "./Toolbar.scss";
@@ -404,6 +405,24 @@ const LayerUI = ({
                 currentUserControls={currentUserControls}
               />
             )}
+            <button
+              className={`animation-timeline-toggle ${appState.openAnimationPanel ? "animation-timeline-toggle--active" : ""}`}
+              onClick={() =>
+                setAppState({
+                  openAnimationPanel: !appState.openAnimationPanel,
+                })
+              }
+              title="Toggle Animation Timeline"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="4" rx="1" />
+                <rect x="2" y="9" width="20" height="4" rx="1" />
+                <rect x="2" y="15" width="20" height="4" rx="1" />
+                <circle cx="7" cy="11" r="1.5" fill="currentColor" />
+                <circle cx="14" cy="11" r="1.5" fill="currentColor" />
+              </svg>
+              Timeline
+            </button>
             {renderTopRightUI?.(
               editorInterface.formFactor === "phone",
               appState,
@@ -615,6 +634,12 @@ const LayerUI = ({
           >
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
+            <AnimationTimeline
+              elements={elements}
+              appState={appState}
+              setAppState={setAppState}
+              app={app}
+            />
             <Footer
               appState={appState}
               actionManager={actionManager}

@@ -44,6 +44,7 @@ import type {
   ExcalidrawFrameElement,
   ExcalidrawEmbeddableElement,
   ExcalidrawMagicFrameElement,
+  ExcalidrawAnimationFrameElement,
   ExcalidrawIframeElement,
   ElementsMap,
   ExcalidrawArrowElement,
@@ -211,6 +212,25 @@ export const newMagicFrameElement = (
       ..._newElementBase<ExcalidrawMagicFrameElement>("magicframe", opts),
       type: "magicframe",
       name: opts?.name || null,
+    },
+    {},
+  );
+
+  return frameElement;
+};
+
+export const newAnimationFrameElement = (
+  opts: {
+    name?: string;
+    frameIndex?: number;
+  } & ElementConstructorOpts,
+): NonDeleted<ExcalidrawAnimationFrameElement> => {
+  const frameElement = newElementWith(
+    {
+      ..._newElementBase<ExcalidrawAnimationFrameElement>("animationframe", opts),
+      type: "animationframe",
+      name: opts?.name || null,
+      frameIndex: opts.frameIndex ?? 1,
     },
     {},
   );

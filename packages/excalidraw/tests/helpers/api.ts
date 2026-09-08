@@ -21,6 +21,7 @@ import {
   newImageElement,
   newLinearElement,
   newMagicFrameElement,
+  newAnimationFrameElement,
   newTextElement,
 } from "@excalidraw/element";
 
@@ -42,6 +43,7 @@ import type {
   ExcalidrawMagicFrameElement,
   ExcalidrawElbowArrowElement,
   ExcalidrawArrowElement,
+  ExcalidrawAnimationFrameElement,
   FixedSegment,
   NonDeleted,
   NonDeletedExcalidrawElement,
@@ -378,6 +380,9 @@ export class API {
         break;
       case "magicframe":
         element = newMagicFrameElement({ ...base, width, height });
+        break;
+      case "animationframe":
+        element = newAnimationFrameElement({ ...base, width, height });
         break;
       default:
         assertNever(

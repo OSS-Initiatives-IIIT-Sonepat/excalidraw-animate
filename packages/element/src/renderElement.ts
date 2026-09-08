@@ -61,6 +61,7 @@ import {
   isArrowElement,
   hasBoundTextElement,
   isMagicFrameElement,
+  isAnimationFrameElement,
   isImageElement,
 } from "./typeChecks";
 import { getContainingFrame } from "./frame";
@@ -736,6 +737,7 @@ export const renderElement = (
 
   switch (element.type) {
     case "magicframe":
+    case "animationframe":
     case "frame": {
       if (appState.frameRendering.enabled && appState.frameRendering.outline) {
         context.save();
@@ -757,6 +759,15 @@ export const renderElement = (
             appState.theme === THEME.LIGHT
               ? "#7affd7"
               : applyDarkModeFilter("#1d8264");
+        } else if (isAnimationFrameElement(element)) {
+          context.strokeStyle =
+            appState.theme === THEME.LIGHT
+              ? "#d946ef" // Fuchsia color for animation frames
+              : applyDarkModeFilter("#a21caf"); // Darker fuchsia for dark mode
+          
+          if (context.setLineDash) {
+            context.setLineDash([5, 5]); // Dashed border
+          }
         }
 
         if (FRAME_STYLE.radius && context.roundRect) {
@@ -772,6 +783,10 @@ export const renderElement = (
           context.closePath();
         } else {
           context.strokeRect(0, 0, element.width, element.height);
+        }
+
+        if (isAnimationFrameElement(element) && context.setLineDash) {
+          context.setLineDash([]); // Reset line dash
         }
 
         context.restore();

@@ -24,6 +24,7 @@ import type {
   ExcalidrawIframeElement,
   ExcalidrawIframeLikeElement,
   ExcalidrawMagicFrameElement,
+  ExcalidrawAnimationFrameElement,
   ExcalidrawArrowElement,
   ExcalidrawElbowArrowElement,
   ExcalidrawLineElement,
@@ -81,12 +82,18 @@ export const isMagicFrameElement = <T extends ExcalidrawElement>(
   return element != null && element.type === "magicframe";
 };
 
+export const isAnimationFrameElement = <T extends ExcalidrawElement>(
+  element: T | null,
+): element is T & ExcalidrawAnimationFrameElement => {
+  return element != null && element.type === "animationframe";
+};
+
 export const isFrameLikeElement = <T extends ExcalidrawElement>(
   element: T | null,
 ): element is T & ExcalidrawFrameLikeElement => {
   return (
     element != null &&
-    (element.type === "frame" || element.type === "magicframe")
+    (element.type === "frame" || element.type === "magicframe" || element.type === "animationframe")
   );
 };
 
@@ -260,6 +267,7 @@ export const isExcalidrawElement = (
     case "line":
     case "frame":
     case "magicframe":
+    case "animationframe":
     case "image":
     case "selection": {
       return true;
