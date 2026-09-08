@@ -14,9 +14,37 @@ export interface Keyframe {
   /** GSAP easing for the transition FROM this keyframe to the next */
   easing: string;
 }
+// ─── Audio Data Model ────────────────────────────────────────────────────────
+
+export interface AudioClip {
+  id: string;
+  /** Name shown in timeline */
+  name: string;
+  /** Temporary URL pointing to uploaded audio file */
+  audioUrl: string;
+  /** Original duration of the audio in seconds */
+  sourceDuration: number;
+  /** Position of the clip on the timeline in seconds */
+  startTime: number;
+  /** Clip volume from 0 to 1 */
+  volume: number;
+  /** Whether this individual clip is muted */
+  muted: boolean;
+}
+
+export interface AudioTrack {
+  id: string;
+  /** Name shown on the timeline track */
+  name: string;
+  /** Audio clips inside this track */
+  clips: AudioClip[];
+  /** Whether the entire track is muted */
+  muted: boolean;
+}
 
 export interface TimelineState {
   keyframesByFrame: Record<string, Keyframe[]>;
+  audioTracksByFrame: Record<string, AudioTrack[]>;
   activeFrameId: string | null;
   /** Total duration in seconds (default 60, user-adjustable) */
   duration: number;
@@ -41,6 +69,7 @@ const MAX_DURATION = 600; // 10 minutes max
 
 export const createDefaultTimelineState = (): TimelineState => ({
   keyframesByFrame: {},
+  audioTracksByFrame: {},
   activeFrameId: null,
   duration: DEFAULT_DURATION,
   currentTime: 0,
@@ -83,7 +112,11 @@ export class TimelineStore {
 
   setActiveFrameId(frameId: string | null) {
     if (this.state.activeFrameId !== frameId) {
-      this.setState({ activeFrameId: frameId, currentTime: 0, isPlaying: false });
+      this.setState({
+        activeFrameId: frameId,
+        currentTime: 0,
+        isPlaying: false,
+      });
     }
   }
 
@@ -155,10 +188,7 @@ export class TimelineStore {
     this.setActiveKeyframes(keyframes);
   }
 
-  updateKeyframeSnapshot(
-    id: string,
-    elements: readonly ExcalidrawElement[],
-  ) {
+  updateKeyframeSnapshot(id: string, elements: readonly ExcalidrawElement[]) {
     const snapshot = elements.map((el) => ({ ...el }));
     const keyframes = this.getActiveKeyframes().map((kf) =>
       kf.id === id ? { ...kf, elementSnapshots: snapshot } : kf,
@@ -170,9 +200,7 @@ export class TimelineStore {
    * Get the two keyframes that surround the given time.
    * Returns [before, after] or [only, null] if at the edge.
    */
-  getSurroundingKeyframes(
-    time: number,
-  ): [Keyframe | null, Keyframe | null] {
+  getSurroundingKeyframes(time: number): [Keyframe | null, Keyframe | null] {
     const keyframes = this.getActiveKeyframes();
     if (keyframes.length === 0) return [null, null];
 
@@ -188,6 +216,81 @@ export class TimelineStore {
     }
 
     return [before, after];
+  }
+
+  // ── Audio Track Operations ───────────────────────────────────────────────────
+
+  getActiveAudioTracks(): AudioTrack[] {
+    if (!this.state.activeFrameId) {
+      return [];
+    }
+
+    return this.state.audioTracksByFrame[this.state.activeFrameId] || [];
+  }
+
+  private setActiveAudioTracks(tracks: AudioTrack[]) {
+    if (!this.state.activeFrameId) {
+      return;
+    }
+
+    this.setState({
+      audioTracksByFrame: {
+        ...this.state.audioTracksByFrame,
+
+        [this.state.activeFrameId]: tracks,
+      },
+    });
+  }
+  addAudioTrack(name: string = "Audio"): AudioTrack | null {
+    if (!this.state.activeFrameId) {
+      return null;
+    }
+
+    const track: AudioTrack = {
+      id: nanoid(),
+      name,
+      clips: [],
+      muted: false,
+    };
+
+    const tracks = [...this.getActiveAudioTracks(), track];
+
+    this.setActiveAudioTracks(tracks);
+
+    return track;
+  }
+  addAudioClip(
+    trackId: string,
+    clipData: Omit<AudioClip, "id">,
+  ): AudioClip | null {
+    const tracks = this.getActiveAudioTracks();
+
+    const trackExists = tracks.some((track) => track.id === trackId);
+
+    if (!trackExists) {
+      return null;
+    }
+
+    const newClip: AudioClip = {
+      id: nanoid(),
+      ...clipData,
+    };
+
+    const updatedTracks = tracks.map((track) => {
+      if (track.id !== trackId) {
+        return track;
+      }
+
+      return {
+        ...track,
+
+        clips: [...track.clips, newClip],
+      };
+    });
+
+    this.setActiveAudioTracks(updatedTracks);
+
+    return newClip;
   }
 
   // ── Playback Controls ──

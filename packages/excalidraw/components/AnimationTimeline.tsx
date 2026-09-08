@@ -129,6 +129,22 @@ const UpdateIcon = () => (
   </svg>
 );
 
+const AudioIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 18V5l12-2v13" />
+    <circle cx="6" cy="18" r="3" />
+    <circle cx="18" cy="16" r="3" />
+  </svg>
+);
+
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const formatTime = (seconds: number): string => {
@@ -166,8 +182,10 @@ export const AnimationTimeline = ({
 
   const trackContainerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const playheadDragRef = useRef(false);
   const animFrameRef = useRef<number | null>(null);
+  const activeAudiosRef = useRef<{audio: HTMLAudioElement, timeoutId?: NodeJS.Timeout}[]>([]);
   const savedElementsRef = useRef<readonly ExcalidrawElement[] | null>(
     null,
   );
@@ -287,6 +305,40 @@ export const AnimationTimeline = ({
     }
   }, [app, store, currentTime, keyframes, activeFrameId, existingKf]);
 
+  const handleAudioUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const audioUrl = URL.createObjectURL(file);
+    const audio = new Audio(audioUrl);
+    
+    audio.addEventListener('loadedmetadata', () => {
+      const duration = audio.duration;
+      
+      let tracks = store.getActiveAudioTracks();
+      let track: AudioTrack | null = tracks[0] || null;
+      if (!track) {
+        track = store.addAudioTrack("Track 1");
+      }
+      
+      if (track) {
+        store.addAudioClip(track.id, {
+          name: file.name,
+          audioUrl,
+          sourceDuration: duration,
+          startTime: currentTime,
+          volume: 1,
+          muted: false
+        });
+      }
+      
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    });
+  }, [store, currentTime]);
+
   const handleRemoveKeyframe = useCallback(
     (id: string) => {
       store.removeKeyframe(id);
@@ -385,6 +437,13 @@ export const AnimationTimeline = ({
       setIsPlaying(false);
       store.setPlaying(false);
 
+      // Stop audio
+      activeAudiosRef.current.forEach(({ audio, timeoutId }) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        audio.pause();
+      });
+      activeAudiosRef.current = [];
+
       // Restore original elements
       if (savedElementsRef.current) {
         app.scene.replaceAllElements(savedElementsRef.current);
@@ -482,9 +541,40 @@ export const AnimationTimeline = ({
     setIsPlaying(true);
     store.setPlaying(true);
 
+    // Play audio clips
+    const tracks = store.getActiveAudioTracks();
+    const currentT = store.getState().currentTime;
+    tracks.forEach(track => {
+      track.clips.forEach(clip => {
+        if (clip.startTime + clip.sourceDuration > currentT) {
+          const audio = new Audio(clip.audioUrl);
+          const delay = clip.startTime - currentT;
+          
+          if (delay > 0) {
+             const timeoutId = setTimeout(() => {
+                audio.play().catch(e => console.error("Audio play error:", e));
+             }, delay * 1000);
+             activeAudiosRef.current.push({ audio, timeoutId });
+          } else {
+             audio.currentTime = -delay;
+             audio.play().catch(e => console.error("Audio play error:", e));
+             activeAudiosRef.current.push({ audio });
+          }
+        }
+      });
+    });
+
     // Sync playhead with GSAP timeline
     const syncPlayhead = () => {
-      if (!engine.isActive()) return;
+      if (!engine.isActive()) {
+        // Reached end or stopped naturally
+        activeAudiosRef.current.forEach(({ audio, timeoutId }) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          audio.pause();
+        });
+        activeAudiosRef.current = [];
+        return;
+      }
       store.setCurrentTime(engine.getCurrentTime());
       animFrameRef.current = requestAnimationFrame(syncPlayhead);
     };
@@ -606,6 +696,22 @@ export const AnimationTimeline = ({
             {existingKf ? "Update" : "Keyframe"}
           </button>
 
+          <input
+            type="file"
+            accept="audio/mp3,audio/wav"
+            ref={fileInputRef}
+            onChange={handleAudioUpload}
+            style={{ display: "none" }}
+          />
+          <button
+            className="animation-timeline__add-keyframe-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title="Add Audio"
+          >
+            <AudioIcon />
+            Audio
+          </button>
+
           {selectedKeyframeId && (
             <button
               className="animation-timeline__delete-keyframe-btn"
@@ -703,6 +809,29 @@ export const AnimationTimeline = ({
           >
             {/* Background grid */}
             <div className="animation-timeline__track-bg" />
+
+            {/* Audio Tracks */}
+            {store.getActiveAudioTracks().map((track, trackIndex) => (
+              <div
+                key={track.id}
+                className="animation-timeline__audio-track"
+                style={{ top: `${(trackIndex) * 30 + 10}px` }}
+              >
+                {track.clips.map((clip) => (
+                  <div
+                    key={clip.id}
+                    className="animation-timeline__audio-clip"
+                    style={{
+                      left: clip.startTime * pixelsPerSecond,
+                      width: clip.sourceDuration * pixelsPerSecond,
+                    }}
+                    title={clip.name}
+                  >
+                    {clip.name}
+                  </div>
+                ))}
+              </div>
+            ))}
 
             {/* Lane line */}
             <div className="animation-timeline__track-lane" />
