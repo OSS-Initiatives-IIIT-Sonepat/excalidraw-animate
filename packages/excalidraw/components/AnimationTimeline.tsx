@@ -9,6 +9,7 @@ import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, UIAppState, AppClassProperties } from "../types";
 import {
+  AudioTrack,
   TimelineStore,
   getTimelineStore,
   type Keyframe,
