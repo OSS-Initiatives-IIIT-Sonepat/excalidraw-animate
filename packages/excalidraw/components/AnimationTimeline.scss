@@ -293,12 +293,13 @@
       flex: 1;
       position: relative;
       overflow-x: auto;
-      overflow-y: hidden;
+      overflow-y: auto;
       cursor: pointer;
       padding: 0.5rem 0;
 
       &::-webkit-scrollbar {
         height: 6px;
+        width: 6px;
       }
 
       &::-webkit-scrollbar-track {
@@ -327,8 +328,8 @@
       position: absolute;
       left: 0;
       right: 0;
-      height: 30px;
-      background: rgba(105, 101, 219, 0.05);
+      height: 34px;
+      background: rgba(105, 101, 219, 0.04);
       border-bottom: 1px solid var(--color-gray-20, #ebebeb);
       z-index: 1;
     }
@@ -336,24 +337,128 @@
     &__audio-clip {
       position: absolute;
       top: 4px;
-      height: 22px;
+      height: 24px;
       background: var(--color-primary-light, #e3e2fe);
       border: 1px solid var(--color-primary, #6965db);
       border-radius: 4px;
       display: flex;
       align-items: center;
-      padding: 0 6px;
+      padding: 0 16px;
       font-size: 0.65rem;
       font-weight: 600;
       color: var(--color-primary-darker, #5b57d1);
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
-      cursor: pointer;
+      cursor: grab;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      user-select: none;
+      transition: box-shadow 0.15s ease, background 0.15s ease;
 
       &:hover {
         background: var(--color-primary-light-darker, #d7d5ff);
+        box-shadow: 0 2px 8px rgba(105, 101, 219, 0.25);
+
+        .animation-timeline__audio-clip-delete {
+          opacity: 1;
+          pointer-events: auto;
+        }
+      }
+
+      &--dragging {
+        cursor: grabbing;
+        opacity: 0.85;
+        box-shadow: 0 4px 16px rgba(105, 101, 219, 0.35);
+        z-index: 10;
+      }
+
+      &--resizing {
+        z-index: 10;
+        box-shadow: 0 2px 12px rgba(105, 101, 219, 0.3);
+      }
+    }
+
+    &__audio-clip-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      pointer-events: none;
+      flex: 1;
+      min-width: 0;
+    }
+
+    &__audio-clip-handle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 7px;
+      cursor: col-resize;
+      z-index: 2;
+      background: transparent;
+      transition: background 0.15s ease;
+
+      &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 2px;
+        height: 12px;
+        border-radius: 1px;
+        background: transparent;
+        transition: background 0.15s ease;
+      }
+
+      &:hover::after {
+        background: var(--color-primary, #6965db);
+      }
+
+      &--left {
+        left: -1px;
+        border-radius: 4px 0 0 4px;
+
+        &::after {
+          left: 2px;
+        }
+      }
+
+      &--right {
+        right: -1px;
+        border-radius: 0 4px 4px 0;
+
+        &::after {
+          right: 2px;
+        }
+      }
+    }
+
+    &__audio-clip-delete {
+      position: absolute;
+      top: -1px;
+      right: -1px;
+      width: 16px;
+      height: 16px;
+      border-radius: 0 4px 0 4px;
+      background: var(--color-danger, #db6965);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+      padding: 0;
+      z-index: 5;
+
+      svg {
+        width: 10px;
+        height: 10px;
+      }
+
+      &:hover {
+        background: #c0504d;
       }
     }
 
@@ -400,19 +505,17 @@
 
     &__keyframe {
       position: absolute;
-      top: 50%;
-      transform: translate(-50%, -50%) rotate(45deg);
       width: 14px;
       height: 14px;
       background: var(--color-primary, #6965db);
       border: 2px solid var(--island-bg-color, #fff);
       cursor: grab;
       z-index: 3;
-      transition: box-shadow 0.15s ease, transform 0.15s ease;
+      transition: box-shadow 0.15s ease;
       box-shadow: 0 0 0 1px var(--color-primary-darker, #5b57d1);
 
       &:hover {
-        transform: translate(-50%, -50%) rotate(45deg) scale(1.3);
+        transform: translate(-50%, -50%) rotate(45deg) scale(1.3) !important;
         box-shadow: 0 0 0 2px var(--color-primary, #6965db),
           0 0 8px rgba(105, 101, 219, 0.4);
       }
@@ -425,7 +528,7 @@
         background: var(--color-primary-darker, #5b57d1);
         box-shadow: 0 0 0 3px var(--color-primary-light, #e3e2fe),
           0 0 12px rgba(105, 101, 219, 0.5);
-        transform: translate(-50%, -50%) rotate(45deg) scale(1.2);
+        transform: translate(-50%, -50%) rotate(45deg) scale(1.2) !important;
       }
 
       &--dragging {
@@ -436,7 +539,6 @@
 
     &__keyframe-label {
       position: absolute;
-      top: calc(50% + 16px);
       transform: translateX(-50%);
       font-size: 0.6rem;
       color: var(--color-primary-darker, #5b57d1);
@@ -449,7 +551,6 @@
 
     &__keyframe-time {
       position: absolute;
-      top: calc(50% - 18px);
       transform: translateX(-50%);
       font-size: 0.55rem;
       color: var(--color-gray-50, #999);
