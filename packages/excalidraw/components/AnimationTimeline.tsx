@@ -9,8 +9,6 @@ import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, UIAppState, AppClassProperties } from "../types";
 import {
-  AudioTrack,
-  TimelineStore,
   getTimelineStore,
   type Keyframe,
 } from "../animation/TimelineStore";
@@ -180,6 +178,8 @@ export const AnimationTimeline = ({
   const [isDraggingKeyframe, setIsDraggingKeyframe] = useState(false);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
+  const [resizingClipId, setResizingClipId] = useState<string | null>(null);
 
   const trackContainerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -314,19 +314,17 @@ export const AnimationTimeline = ({
     const audio = new Audio(audioUrl);
     
     audio.addEventListener('loadedmetadata', () => {
-      const duration = audio.duration;
+      const clipDuration = audio.duration;
       
-      let tracks = store.getActiveAudioTracks();
-      let track: AudioTrack | null = tracks[0] || null;
-      if (!track) {
-        track = store.addAudioTrack("Track 1");
-      }
+      // Always create a new track for each upload so clips stack vertically
+      const trackCount = store.getActiveAudioTracks().length;
+      const track = store.addAudioTrack(`Track ${trackCount + 1}`);
       
       if (track) {
         store.addAudioClip(track.id, {
           name: file.name,
           audioUrl,
-          sourceDuration: duration,
+          sourceDuration: clipDuration,
           startTime: currentTime,
           volume: 1,
           muted: false
@@ -339,6 +337,100 @@ export const AnimationTimeline = ({
       }
     });
   }, [store, currentTime]);
+
+  // ── Audio clip drag ──
+
+  const handleClipDragStart = useCallback(
+    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startMouseTime = getTimeFromMouseX(e.clientX);
+      const offset = startMouseTime - clip.startTime;
+      setDraggingClipId(clip.id);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const mouseTime = getTimeFromMouseX(moveEvent.clientX);
+        store.moveAudioClip(trackId, clip.id, mouseTime - offset);
+      };
+
+      const handleMouseUp = () => {
+        setDraggingClipId(null);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [getTimeFromMouseX, store],
+  );
+
+  // ── Audio clip resize (left edge) ──
+
+  const handleClipResizeLeftStart = useCallback(
+    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number; sourceDuration: number }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const origStart = clip.startTime;
+      const origEnd = clip.startTime + clip.sourceDuration;
+      setResizingClipId(clip.id);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const mouseTime = getTimeFromMouseX(moveEvent.clientX);
+        const newStart = Math.min(mouseTime, origEnd - 0.1);
+        const newDuration = origEnd - Math.max(0, newStart);
+        store.resizeAudioClip(trackId, clip.id, Math.max(0, newStart), newDuration);
+      };
+
+      const handleMouseUp = () => {
+        setResizingClipId(null);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [getTimeFromMouseX, store],
+  );
+
+  // ── Audio clip resize (right edge) ──
+
+  const handleClipResizeRightStart = useCallback(
+    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number; sourceDuration: number }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const origStart = clip.startTime;
+      setResizingClipId(clip.id);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const mouseTime = getTimeFromMouseX(moveEvent.clientX);
+        const newDuration = Math.max(0.1, mouseTime - origStart);
+        store.resizeAudioClip(trackId, clip.id, origStart, newDuration);
+      };
+
+      const handleMouseUp = () => {
+        setResizingClipId(null);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [getTimeFromMouseX, store],
+  );
+
+  // ── Audio clip delete ──
+
+  const handleClipDelete = useCallback(
+    (e: React.MouseEvent, trackId: string, clipId: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      store.removeAudioClip(trackId, clipId);
+    },
+    [store],
+  );
 
   const handleRemoveKeyframe = useCallback(
     (id: string) => {
@@ -648,6 +740,13 @@ export const AnimationTimeline = ({
     );
   }
 
+  // ── Audio track layout ──
+  const audioTracks = store.getActiveAudioTracks();
+  const AUDIO_TRACK_HEIGHT = 34;
+  const audioTracksHeight = audioTracks.length * AUDIO_TRACK_HEIGHT;
+  const keyframeLaneOffset = audioTracksHeight + 20; // 20px gap
+  const totalTrackHeight = Math.max(80, keyframeLaneOffset + 50);
+
   // ── Last keyframe time for the filled track ──
   const lastKeyframeTime =
     keyframes.length > 0 ? keyframes[keyframes.length - 1].time : 0;
@@ -804,6 +903,7 @@ export const AnimationTimeline = ({
             style={
               {
                 width: trackWidth,
+                minHeight: totalTrackHeight,
                 "--pps": `${pixelsPerSecond}px`,
               } as React.CSSProperties
             }
@@ -812,36 +912,66 @@ export const AnimationTimeline = ({
             <div className="animation-timeline__track-bg" />
 
             {/* Audio Tracks */}
-            {store.getActiveAudioTracks().map((track, trackIndex) => (
+            {audioTracks.map((track, trackIndex) => (
               <div
                 key={track.id}
                 className="animation-timeline__audio-track"
-                style={{ top: `${(trackIndex) * 30 + 10}px` }}
+                style={{ top: `${trackIndex * AUDIO_TRACK_HEIGHT}px` }}
               >
                 {track.clips.map((clip) => (
                   <div
                     key={clip.id}
-                    className="animation-timeline__audio-clip"
+                    className={`animation-timeline__audio-clip ${draggingClipId === clip.id ? "animation-timeline__audio-clip--dragging" : ""} ${resizingClipId === clip.id ? "animation-timeline__audio-clip--resizing" : ""}`}
                     style={{
                       left: clip.startTime * pixelsPerSecond,
-                      width: clip.sourceDuration * pixelsPerSecond,
+                      width: Math.max(clip.sourceDuration * pixelsPerSecond, 6),
                     }}
                     title={clip.name}
+                    onMouseDown={(e) => handleClipDragStart(e, track.id, clip)}
                   >
-                    {clip.name}
+                    {/* Left resize handle */}
+                    <div
+                      className="animation-timeline__audio-clip-handle animation-timeline__audio-clip-handle--left"
+                      onMouseDown={(e) => handleClipResizeLeftStart(e, track.id, clip)}
+                    />
+
+                    {/* Clip label */}
+                    <span className="animation-timeline__audio-clip-label">
+                      {clip.name}
+                    </span>
+
+                    {/* Right resize handle */}
+                    <div
+                      className="animation-timeline__audio-clip-handle animation-timeline__audio-clip-handle--right"
+                      onMouseDown={(e) => handleClipResizeRightStart(e, track.id, clip)}
+                    />
+
+                    {/* Delete button */}
+                    <button
+                      className="animation-timeline__audio-clip-delete"
+                      onMouseDown={(e) => handleClipDelete(e, track.id, clip.id)}
+                      title="Remove clip"
+                    >
+                      <CloseIcon />
+                    </button>
                   </div>
                 ))}
               </div>
             ))}
 
-            {/* Lane line */}
-            <div className="animation-timeline__track-lane" />
+            {/* Lane line — shifted below audio tracks */}
+            <div
+              className="animation-timeline__track-lane"
+              style={{ top: keyframeLaneOffset, transform: "none" }}
+            />
 
             {/* Filled portion between first and last keyframes */}
             {keyframes.length >= 2 && (
               <div
                 className="animation-timeline__track-filled"
                 style={{
+                  top: keyframeLaneOffset,
+                  transform: "none",
                   left: firstKeyframeTime * pixelsPerSecond,
                   width:
                     (lastKeyframeTime - firstKeyframeTime) *
@@ -851,7 +981,7 @@ export const AnimationTimeline = ({
             )}
 
             {/* Empty state */}
-            {keyframes.length === 0 && (
+            {keyframes.length === 0 && audioTracks.length === 0 && (
               <div className="animation-timeline__empty">
                 <DiamondIcon />
                 <span>
@@ -865,21 +995,21 @@ export const AnimationTimeline = ({
               <React.Fragment key={kf.id}>
                 <div
                   className={`animation-timeline__keyframe ${selectedKeyframeId === kf.id ? "animation-timeline__keyframe--selected" : ""} ${isDraggingKeyframe ? "animation-timeline__keyframe--dragging" : ""}`}
-                  style={{ left: kf.time * pixelsPerSecond }}
+                  style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset + 2, transform: "translate(-50%, -50%) rotate(45deg)" }}
                   onClick={(e) => handleKeyframeClick(e, kf)}
                   onMouseDown={(e) => handleKeyframeDragStart(e, kf)}
                   title={`${kf.label || "Keyframe"} at ${formatTime(kf.time)}`}
                 />
                 <span
                   className="animation-timeline__keyframe-time"
-                  style={{ left: kf.time * pixelsPerSecond }}
+                  style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset - 14 }}
                 >
                   {formatTime(kf.time)}
                 </span>
                 {kf.label && (
                   <span
                     className="animation-timeline__keyframe-label"
-                    style={{ left: kf.time * pixelsPerSecond }}
+                    style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset + 16 }}
                   >
                     {kf.label}
                   </span>

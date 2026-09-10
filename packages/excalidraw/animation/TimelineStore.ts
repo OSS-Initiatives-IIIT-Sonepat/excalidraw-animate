@@ -293,6 +293,69 @@ export class TimelineStore {
     return newClip;
   }
 
+  moveAudioClip(trackId: string, clipId: string, newStartTime: number) {
+    const tracks = this.getActiveAudioTracks();
+    const updatedTracks = tracks.map((track) => {
+      if (track.id !== trackId) return track;
+      return {
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (clip.id !== clipId) return clip;
+          const clamped = Math.max(
+            0,
+            Math.min(newStartTime, this.state.duration - clip.sourceDuration),
+          );
+          return { ...clip, startTime: clamped };
+        }),
+      };
+    });
+    this.setActiveAudioTracks(updatedTracks);
+  }
+
+  resizeAudioClip(
+    trackId: string,
+    clipId: string,
+    newStartTime: number,
+    newDuration: number,
+  ) {
+    const MIN_CLIP_DURATION = 0.1;
+    const tracks = this.getActiveAudioTracks();
+    const updatedTracks = tracks.map((track) => {
+      if (track.id !== trackId) return track;
+      return {
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (clip.id !== clipId) return clip;
+          const clampedDuration = Math.max(MIN_CLIP_DURATION, newDuration);
+          const clampedStart = Math.max(0, newStartTime);
+          const finalDuration = Math.min(
+            clampedDuration,
+            this.state.duration - clampedStart,
+          );
+          return {
+            ...clip,
+            startTime: clampedStart,
+            sourceDuration: finalDuration,
+          };
+        }),
+      };
+    });
+    this.setActiveAudioTracks(updatedTracks);
+  }
+
+  removeAudioClip(trackId: string, clipId: string) {
+    let tracks = this.getActiveAudioTracks().map((track) => {
+      if (track.id !== trackId) return track;
+      return {
+        ...track,
+        clips: track.clips.filter((clip) => clip.id !== clipId),
+      };
+    });
+    // Remove empty tracks
+    tracks = tracks.filter((track) => track.clips.length > 0);
+    this.setActiveAudioTracks(tracks);
+  }
+
   // ── Playback Controls ──
 
   setCurrentTime(time: number) {
