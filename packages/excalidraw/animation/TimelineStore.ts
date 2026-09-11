@@ -1,5 +1,91 @@
 import { nanoid } from "nanoid";
+import { debounce } from "@excalidraw/common";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
+
+// ─── Persistence ──────────────────────────────────────────────────────────────
+// Mirrors how excalidraw-app itself persists the scene: keep the actual saved
+// data separate from transient/session state (playhead, play/pause, panel
+// open, scroll), and debounce writes so we're not hitting localStorage on
+// every playhead tick.
+//
+// Audio clips are deliberately NOT persisted here: `audioUrl` is a
+// `URL.createObjectURL(file)` blob URL, which only lives as long as the
+// Blob does in memory — it does not survive a reload, so saving it would
+// just save a dead reference. Persisting audio for real needs the actual
+// file bytes (base64 in IndexedDB, most likely — localStorage's ~5-10MB
+// quota won't hold much audio). Flagging as a follow-up rather than doing
+// it silently-wrong.
+
+const STORAGE_KEY = "excalidraw-animate:timeline";
+const SAVE_DEBOUNCE_MS = 300;
+
+type PersistedTimelineState = Pick<
+  TimelineState,
+  "keyframesByFrame" | "duration" | "pixelsPerSecond"
+>;
+
+const loadPersistedState = (): Partial<TimelineState> | null => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as Partial<TimelineState>;
+  } catch (error) {
+    console.error("[TimelineStore] failed to load from localStorage:", error);
+    return null;
+  }
+};
+
+const savePersistedStateNow = (state: TimelineState) => {
+  try {
+    const toSave: PersistedTimelineState = {
+      keyframesByFrame: state.keyframesByFrame,
+      duration: state.duration,
+      pixelsPerSecond: state.pixelsPerSecond,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+  } catch (error) {
+    // Most likely QuotaExceededError — full-element keyframe snapshots add
+    // up fast across many keyframes/frames. Don't crash the app over it.
+    console.error("[TimelineStore] failed to save to localStorage:", error);
+  }
+};
+
+export const clearPersistedTimeline = () => {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.error("[TimelineStore] failed to clear localStorage:", error);
+  }
+};
+
+/**
+ * `{ ...el }` only shallow-copies — an arrow's `points` array (and
+ * `startBinding`/`endBinding` objects) would still be the *same reference*
+ * as the live element's. If anything later mutates that array/object in
+ * place, an already-captured keyframe would silently change too. Clone the
+ * parts that are arrays/objects rather than primitives.
+ */
+const cloneElementForSnapshot = (el: ExcalidrawElement): ExcalidrawElement => {
+  const clone: any = { ...el };
+  if (Array.isArray((el as any).points)) {
+    clone.points = (el as any).points.map((p: [number, number]) => [
+      p[0],
+      p[1],
+    ]);
+  }
+  if ((el as any).startBinding) {
+    clone.startBinding = { ...(el as any).startBinding };
+  }
+  if ((el as any).endBinding) {
+    clone.endBinding = { ...(el as any).endBinding };
+  }
+  if (Array.isArray(el.boundElements)) {
+    clone.boundElements = el.boundElements.map((b) => ({ ...b }));
+  }
+  return clone as ExcalidrawElement;
+};
 
 // ─── Keyframe Data Model ──────────────────────────────────────────────────────
 
@@ -84,9 +170,18 @@ export const createDefaultTimelineState = (): TimelineState => ({
 export class TimelineStore {
   private state: TimelineState;
   private listeners: Set<(state: TimelineState) => void> = new Set();
+  private persistDebounced = debounce(
+    () => savePersistedStateNow(this.state),
+    SAVE_DEBOUNCE_MS,
+  );
 
   constructor(initialState?: Partial<TimelineState>) {
-    this.state = { ...createDefaultTimelineState(), ...initialState };
+    // Explicit initialState (tests, etc.) wins over whatever's saved.
+    this.state = {
+      ...createDefaultTimelineState(),
+      ...loadPersistedState(),
+      ...initialState,
+    };
   }
 
   getState(): TimelineState {
@@ -106,6 +201,17 @@ export class TimelineStore {
   private setState(updates: Partial<TimelineState>) {
     this.state = { ...this.state, ...updates };
     this.notify();
+
+    // currentTime/isPlaying/isOpen/scrollOffset/audioTracksByFrame change
+    // constantly (or aren't safe to restore, in audio's case) — only
+    // persist the actual saved data.
+    if (
+      "keyframesByFrame" in updates ||
+      "duration" in updates ||
+      "pixelsPerSecond" in updates
+    ) {
+      this.persistDebounced();
+    }
   }
 
   // ── Keyframe Operations ──
@@ -144,7 +250,7 @@ export class TimelineStore {
     if (!this.state.activeFrameId) return null;
 
     // Deep clone elements to create a snapshot
-    const snapshot = elements.map((el) => ({ ...el }));
+    const snapshot = elements.map(cloneElementForSnapshot);
     const keyframe: Keyframe = {
       id: nanoid(),
       time: Math.max(0, Math.min(time, this.state.duration)),
@@ -189,7 +295,7 @@ export class TimelineStore {
   }
 
   updateKeyframeSnapshot(id: string, elements: readonly ExcalidrawElement[]) {
-    const snapshot = elements.map((el) => ({ ...el }));
+    const snapshot = elements.map(cloneElementForSnapshot);
     const keyframes = this.getActiveKeyframes().map((kf) =>
       kf.id === id ? { ...kf, elementSnapshots: snapshot } : kf,
     );
