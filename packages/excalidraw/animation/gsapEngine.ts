@@ -16,17 +16,40 @@ export const matchSnapshotElements = (
   unmatchedEnd: ExcalidrawElement[];
 } => {
   const pairs: [ExcalidrawElement, ExcalidrawElement][] = [];
-  const usedStartIndices = new Set<number>();
+
+  // ── Pass 1: match by stable id ──────────────────────────────────────────
+  // The common case is editing the *same* elements between keyframes, not
+  // swapping them out. Without this, two elements of the same type with
+  // similar bounding boxes (e.g. two arrows) can get cross-matched to each
+  // other by the geometric pass below, and each ends up morphing toward
+  // the wrong shape entirely instead of just not moving.
+  const usedStartIds = new Set<string>();
+  const usedEndIds = new Set<string>();
+  const endById = new Map(endEls.map((el) => [el.id, el]));
+
+  for (const startEl of startEls) {
+    const endEl = endById.get(startEl.id);
+    if (endEl && endEl.type === startEl.type) {
+      pairs.push([startEl, endEl]);
+      usedStartIds.add(startEl.id);
+      usedEndIds.add(endEl.id);
+    }
+  }
+
+  // ── Pass 2: geometric nearest-neighbor for genuine leftovers ────────────
+  // Only elements whose id truly doesn't exist on the other side (deleted,
+  // or newly drawn) — the Magic-Move-style diffing case.
+  const remainingStart = startEls.filter((el) => !usedStartIds.has(el.id));
+  const remainingEnd = endEls.filter((el) => !usedEndIds.has(el.id));
   const usedEndIndices = new Set<number>();
 
-  for (let i = 0; i < startEls.length; i++) {
-    const startEl = startEls[i];
+  for (const startEl of remainingStart) {
     let bestIdx = -1;
     let bestScore = Infinity;
 
-    for (let j = 0; j < endEls.length; j++) {
+    for (let j = 0; j < remainingEnd.length; j++) {
       if (usedEndIndices.has(j)) continue;
-      const endEl = endEls[j];
+      const endEl = remainingEnd[j];
 
       // Type must match
       if (startEl.type !== endEl.type) continue;
@@ -45,17 +68,19 @@ export const matchSnapshotElements = (
     }
 
     if (bestIdx !== -1) {
-      usedStartIndices.add(i);
       usedEndIndices.add(bestIdx);
-      pairs.push([startEl, endEls[bestIdx]]);
+      pairs.push([startEl, remainingEnd[bestIdx]]);
     }
   }
 
+  const matchedStartIds = new Set(pairs.map(([s]) => s.id));
+  const matchedEndIds = new Set(pairs.map(([, e]) => e.id));
+
   const unmatchedStart = startEls.filter(
-    (_, i) => !usedStartIndices.has(i),
+    (el) => !matchedStartIds.has(el.id),
   ) as ExcalidrawElement[];
   const unmatchedEnd = endEls.filter(
-    (_, j) => !usedEndIndices.has(j),
+    (el) => !matchedEndIds.has(el.id),
   ) as ExcalidrawElement[];
 
   return { pairs, unmatchedStart, unmatchedEnd };
@@ -104,6 +129,38 @@ const lerpColor = (
 
 // ─── Element Interpolation ────────────────────────────────────────────────────
 
+const getPointAtT = (points: readonly [number, number][], t: number): [number, number] => {
+  if (points.length === 0) return [0, 0];
+  if (points.length === 1) return points[0];
+  if (t <= 0) return points[0];
+  if (t >= 1) return points[points.length - 1];
+
+  const dists = [0];
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i][0] - points[i - 1][0];
+    const dy = points[i][1] - points[i - 1][1];
+    dists.push(dists[i - 1] + Math.hypot(dx, dy));
+  }
+
+  const totalDist = dists[dists.length - 1];
+  if (totalDist === 0) return points[0];
+
+  const targetDist = t * totalDist;
+  for (let i = 1; i < dists.length; i++) {
+    if (targetDist <= dists[i]) {
+      const segmentDist = dists[i] - dists[i - 1];
+      const segmentT = segmentDist === 0 ? 0 : (targetDist - dists[i - 1]) / segmentDist;
+      const p1 = points[i - 1];
+      const p2 = points[i];
+      return [
+        p1[0] + (p2[0] - p1[0]) * segmentT,
+        p1[1] + (p2[1] - p1[1]) * segmentT,
+      ];
+    }
+  }
+  return points[points.length - 1];
+};
+
 /**
  * Interpolate a single element between two states.
  */
@@ -114,12 +171,10 @@ const interpolateElement = (
 ): ExcalidrawElement => {
   const lerp = (a: number, b: number) => a + (b - a) * t;
 
-  return {
+  const baseEl = {
     ...startEl,
     x: lerp(startEl.x, endEl.x),
     y: lerp(startEl.y, endEl.y),
-    width: lerp(startEl.width, endEl.width),
-    height: lerp(startEl.height, endEl.height),
     angle: lerp(
       startEl.angle as number,
       endEl.angle as number,
@@ -131,6 +186,60 @@ const interpolateElement = (
       t,
     ),
     strokeColor: lerpColor(startEl.strokeColor, endEl.strokeColor, t),
+  };
+
+  if (startEl.type === "arrow" || startEl.type === "line") {
+    const sEl = startEl as any;
+    const eEl = endEl as any;
+    const startPoints = sEl.points || [[0, 0]];
+    const endPoints = eEl.points || [[0, 0]];
+
+    const N = Math.max(startPoints.length, endPoints.length);
+    const newPoints: [number, number][] = [];
+
+    if (N < 2) {
+      const p1 = startPoints[0] || [0, 0];
+      const p2 = endPoints[0] || [0, 0];
+      newPoints.push([lerp(p1[0], p2[0]), lerp(p1[1], p2[1])]);
+    } else {
+      for (let i = 0; i < N; i++) {
+        const ptT = i / (N - 1);
+        const p1 = getPointAtT(startPoints, ptT);
+        const p2 = getPointAtT(endPoints, ptT);
+        newPoints.push([lerp(p1[0], p2[0]), lerp(p1[1], p2[1])]);
+      }
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const pt of newPoints) {
+      if (pt[0] < minX) minX = pt[0];
+      if (pt[1] < minY) minY = pt[1];
+      if (pt[0] > maxX) maxX = pt[0];
+      if (pt[1] > maxY) maxY = pt[1];
+    }
+
+    const width = minX === Infinity ? 0 : maxX - minX;
+    const height = minY === Infinity ? 0 : maxY - minY;
+
+    return {
+      ...baseEl,
+      type: startEl.type,
+      width,
+      height,
+      points: newPoints,
+      startBinding: eEl.startBinding ?? null,
+      endBinding: eEl.endBinding ?? null,
+    } as any;
+  }
+
+  return {
+    ...baseEl,
+    width: lerp(startEl.width, endEl.width),
+    height: lerp(startEl.height, endEl.height),
   } as ExcalidrawElement;
 };
 

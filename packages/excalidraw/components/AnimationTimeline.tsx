@@ -9,7 +9,6 @@ import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, UIAppState, AppClassProperties } from "../types";
 import {
-  TimelineStore,
   getTimelineStore,
   type Keyframe,
 } from "../animation/TimelineStore";
@@ -129,6 +128,22 @@ const UpdateIcon = () => (
   </svg>
 );
 
+const AudioIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 18V5l12-2v13" />
+    <circle cx="6" cy="18" r="3" />
+    <circle cx="18" cy="16" r="3" />
+  </svg>
+);
+
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const formatTime = (seconds: number): string => {
@@ -163,15 +178,25 @@ export const AnimationTimeline = ({
   const [isDraggingKeyframe, setIsDraggingKeyframe] = useState(false);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
+  const [resizingClipId, setResizingClipId] = useState<string | null>(null);
 
   const trackContainerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const playheadDragRef = useRef(false);
   const animFrameRef = useRef<number | null>(null);
+  const activeAudiosRef = useRef<{audio: HTMLAudioElement, timeoutId?: NodeJS.Timeout}[]>([]);
   const savedElementsRef = useRef<readonly ExcalidrawElement[] | null>(
     null,
   );
   const savedAppStateRef = useRef<Partial<AppState> | null>(null);
+
+  // True while we're the ones writing elements into the scene (seeking or
+  // playing back). The auto-keyframe-update effect below must ignore the
+  // version bumps this causes — otherwise every seek/frame would get
+  // "helpfully" saved back into the keyframe it was interpolated from.
+  const isApplyingOwnUpdateRef = useRef(false);
 
   // Subscribe to store updates
   useEffect(() => {
@@ -244,6 +269,7 @@ export const AnimationTimeline = ({
     } else {
       const interpolatedElements = getElementsAtTime(keyframes, time);
       if (interpolatedElements) {
+        isApplyingOwnUpdateRef.current = true;
         const sceneElements = app.scene.getElementsIncludingDeleted();
         const merged = sceneElements.map(el => {
           const interpolated = interpolatedElements.find(i => i.id === el.id);
@@ -251,6 +277,10 @@ export const AnimationTimeline = ({
         });
         const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
         app.scene.replaceAllElements([...merged, ...newElements]);
+        // Release after this render cycle's version bump has been observed.
+        requestAnimationFrame(() => {
+          isApplyingOwnUpdateRef.current = false;
+        });
       }
     }
   }, [store, engine, keyframes, app]);
@@ -286,6 +316,212 @@ export const AnimationTimeline = ({
       );
     }
   }, [app, store, currentTime, keyframes, activeFrameId, existingKf]);
+
+  // ── Auto-update the keyframe at the current time when the scene changes ──
+  //
+  // If the playhead is sitting on an existing keyframe and the user edits
+  // the canvas (moves/resizes/recolors something), keep that keyframe's
+  // snapshot in sync automatically instead of requiring an explicit
+  // "Update" click. Deliberately does NOT auto-*create* new keyframes —
+  // only keeps an already-placed one current.
+  const activeFrameElements = useMemo(
+    () => elements.filter((el) => el.frameId === activeFrameId),
+    [elements, activeFrameId],
+  );
+
+  // Cheap change signature — `version` is bumped by Excalidraw on every
+  // mutation, so id:version pairs tell us "something changed" without a
+  // deep-equal scan on every render.
+  const elementsSignature = useMemo(
+    () =>
+      activeFrameElements
+        .map((el) => `${el.id}:${el.version}`)
+        .sort()
+        .join("|"),
+    [activeFrameElements],
+  );
+
+  const autoUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const lastSyncedSignatureRef = useRef<string | null>(null);
+
+  // Landing on a keyframe — via mount/reload, switching active frames, or
+  // clicking a different keyframe — makes whatever's on canvas *right now*
+  // the known-good baseline for it. It is NOT itself a change to persist:
+  // right after a reload, `elements` is whatever Excalidraw's own
+  // localStorage restored (the last thing visible before the tab closed,
+  // which has nothing to do with this specific keyframe's saved content).
+  // Without this, `lastSyncedSignatureRef` starting at `null` made the
+  // very first render look like an edit, and the auto-save effect below
+  // would immediately overwrite the correct saved keyframe with whatever
+  // Excalidraw happened to restore.
+  useEffect(() => {
+    lastSyncedSignatureRef.current = elementsSignature;
+    // Only re-baseline when we've actually landed somewhere new — not on
+    // every keystroke-level signature change (that's the whole point).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingKf?.id, activeFrameId]);
+
+  useEffect(() => {
+    if (!activeFrameId || !existingKf) return;
+    // Playback/seek writes bump versions too — that's not a user edit.
+    if (isPlaying || engine.isActive() || isApplyingOwnUpdateRef.current) {
+      return;
+    }
+    if (lastSyncedSignatureRef.current === elementsSignature) return;
+
+    if (autoUpdateTimeoutRef.current) {
+      clearTimeout(autoUpdateTimeoutRef.current);
+    }
+    autoUpdateTimeoutRef.current = setTimeout(() => {
+      store.updateKeyframeSnapshot(existingKf.id, activeFrameElements);
+      lastSyncedSignatureRef.current = elementsSignature;
+    }, 400);
+
+    return () => {
+      if (autoUpdateTimeoutRef.current) {
+        clearTimeout(autoUpdateTimeoutRef.current);
+      }
+    };
+    // existingKf is derived fresh each render from keyframes/currentTime —
+    // depend on its id rather than the object identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    elementsSignature,
+    activeFrameId,
+    existingKf?.id,
+    isPlaying,
+    engine,
+    activeFrameElements,
+    store,
+  ]);
+
+  const handleAudioUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const audioUrl = URL.createObjectURL(file);
+    const audio = new Audio(audioUrl);
+    
+    audio.addEventListener('loadedmetadata', () => {
+      const clipDuration = audio.duration;
+      
+      // Always create a new track for each upload so clips stack vertically
+      const trackCount = store.getActiveAudioTracks().length;
+      const track = store.addAudioTrack(`Track ${trackCount + 1}`);
+      
+      if (track) {
+        store.addAudioClip(track.id, {
+          name: file.name,
+          audioUrl,
+          sourceDuration: clipDuration,
+          startTime: currentTime,
+          volume: 1,
+          muted: false
+        });
+      }
+      
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    });
+  }, [store, currentTime]);
+
+  // ── Audio clip drag ──
+
+  const handleClipDragStart = useCallback(
+    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startMouseTime = getTimeFromMouseX(e.clientX);
+      const offset = startMouseTime - clip.startTime;
+      setDraggingClipId(clip.id);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const mouseTime = getTimeFromMouseX(moveEvent.clientX);
+        store.moveAudioClip(trackId, clip.id, mouseTime - offset);
+      };
+
+      const handleMouseUp = () => {
+        setDraggingClipId(null);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [getTimeFromMouseX, store],
+  );
+
+  // ── Audio clip resize (left edge) ──
+
+  const handleClipResizeLeftStart = useCallback(
+    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number; sourceDuration: number }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const origStart = clip.startTime;
+      const origEnd = clip.startTime + clip.sourceDuration;
+      setResizingClipId(clip.id);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const mouseTime = getTimeFromMouseX(moveEvent.clientX);
+        const newStart = Math.min(mouseTime, origEnd - 0.1);
+        const newDuration = origEnd - Math.max(0, newStart);
+        store.resizeAudioClip(trackId, clip.id, Math.max(0, newStart), newDuration);
+      };
+
+      const handleMouseUp = () => {
+        setResizingClipId(null);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [getTimeFromMouseX, store],
+  );
+
+  // ── Audio clip resize (right edge) ──
+
+  const handleClipResizeRightStart = useCallback(
+    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number; sourceDuration: number }) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const origStart = clip.startTime;
+      setResizingClipId(clip.id);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const mouseTime = getTimeFromMouseX(moveEvent.clientX);
+        const newDuration = Math.max(0.1, mouseTime - origStart);
+        store.resizeAudioClip(trackId, clip.id, origStart, newDuration);
+      };
+
+      const handleMouseUp = () => {
+        setResizingClipId(null);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [getTimeFromMouseX, store],
+  );
+
+  // ── Audio clip delete ──
+
+  const handleClipDelete = useCallback(
+    (e: React.MouseEvent, trackId: string, clipId: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      store.removeAudioClip(trackId, clipId);
+    },
+    [store],
+  );
 
   const handleRemoveKeyframe = useCallback(
     (id: string) => {
@@ -385,10 +621,21 @@ export const AnimationTimeline = ({
       setIsPlaying(false);
       store.setPlaying(false);
 
+      // Stop audio
+      activeAudiosRef.current.forEach(({ audio, timeoutId }) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        audio.pause();
+      });
+      activeAudiosRef.current = [];
+
       // Restore original elements
       if (savedElementsRef.current) {
+        isApplyingOwnUpdateRef.current = true;
         app.scene.replaceAllElements(savedElementsRef.current);
         savedElementsRef.current = null;
+        requestAnimationFrame(() => {
+          isApplyingOwnUpdateRef.current = false;
+        });
       }
       if (savedAppStateRef.current) {
         setAppState(savedAppStateRef.current as any);
@@ -447,6 +694,7 @@ export const AnimationTimeline = ({
     }
 
     // Build and play
+    isApplyingOwnUpdateRef.current = true;
     engine.build(
       keyframes,
       (interpolatedElements, time) => {
@@ -474,6 +722,9 @@ export const AnimationTimeline = ({
             setAppState(savedAppStateRef.current as any);
             savedAppStateRef.current = null;
           }
+          requestAnimationFrame(() => {
+            isApplyingOwnUpdateRef.current = false;
+          });
         }, 500);
       },
     );
@@ -482,9 +733,40 @@ export const AnimationTimeline = ({
     setIsPlaying(true);
     store.setPlaying(true);
 
+    // Play audio clips
+    const tracks = store.getActiveAudioTracks();
+    const currentT = store.getState().currentTime;
+    tracks.forEach(track => {
+      track.clips.forEach(clip => {
+        if (clip.startTime + clip.sourceDuration > currentT) {
+          const audio = new Audio(clip.audioUrl);
+          const delay = clip.startTime - currentT;
+          
+          if (delay > 0) {
+             const timeoutId = setTimeout(() => {
+                audio.play().catch(e => console.error("Audio play error:", e));
+             }, delay * 1000);
+             activeAudiosRef.current.push({ audio, timeoutId });
+          } else {
+             audio.currentTime = -delay;
+             audio.play().catch(e => console.error("Audio play error:", e));
+             activeAudiosRef.current.push({ audio });
+          }
+        }
+      });
+    });
+
     // Sync playhead with GSAP timeline
     const syncPlayhead = () => {
-      if (!engine.isActive()) return;
+      if (!engine.isActive()) {
+        // Reached end or stopped naturally
+        activeAudiosRef.current.forEach(({ audio, timeoutId }) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          audio.pause();
+        });
+        activeAudiosRef.current = [];
+        return;
+      }
       store.setCurrentTime(engine.getCurrentTime());
       animFrameRef.current = requestAnimationFrame(syncPlayhead);
     };
@@ -557,6 +839,13 @@ export const AnimationTimeline = ({
     );
   }
 
+  // ── Audio track layout ──
+  const audioTracks = store.getActiveAudioTracks();
+  const AUDIO_TRACK_HEIGHT = 34;
+  const audioTracksHeight = audioTracks.length * AUDIO_TRACK_HEIGHT;
+  const keyframeLaneOffset = audioTracksHeight + 20; // 20px gap
+  const totalTrackHeight = Math.max(80, keyframeLaneOffset + 50);
+
   // ── Last keyframe time for the filled track ──
   const lastKeyframeTime =
     keyframes.length > 0 ? keyframes[keyframes.length - 1].time : 0;
@@ -604,6 +893,22 @@ export const AnimationTimeline = ({
           >
             {existingKf ? <UpdateIcon /> : <PlusIcon />}
             {existingKf ? "Update" : "Keyframe"}
+          </button>
+
+          <input
+            type="file"
+            accept="audio/mp3,audio/wav"
+            ref={fileInputRef}
+            onChange={handleAudioUpload}
+            style={{ display: "none" }}
+          />
+          <button
+            className="animation-timeline__add-keyframe-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title="Add Audio"
+          >
+            <AudioIcon />
+            Audio
           </button>
 
           {selectedKeyframeId && (
@@ -697,6 +1002,7 @@ export const AnimationTimeline = ({
             style={
               {
                 width: trackWidth,
+                minHeight: totalTrackHeight,
                 "--pps": `${pixelsPerSecond}px`,
               } as React.CSSProperties
             }
@@ -704,14 +1010,67 @@ export const AnimationTimeline = ({
             {/* Background grid */}
             <div className="animation-timeline__track-bg" />
 
-            {/* Lane line */}
-            <div className="animation-timeline__track-lane" />
+            {/* Audio Tracks */}
+            {audioTracks.map((track, trackIndex) => (
+              <div
+                key={track.id}
+                className="animation-timeline__audio-track"
+                style={{ top: `${trackIndex * AUDIO_TRACK_HEIGHT}px` }}
+              >
+                {track.clips.map((clip) => (
+                  <div
+                    key={clip.id}
+                    className={`animation-timeline__audio-clip ${draggingClipId === clip.id ? "animation-timeline__audio-clip--dragging" : ""} ${resizingClipId === clip.id ? "animation-timeline__audio-clip--resizing" : ""}`}
+                    style={{
+                      left: clip.startTime * pixelsPerSecond,
+                      width: Math.max(clip.sourceDuration * pixelsPerSecond, 6),
+                    }}
+                    title={clip.name}
+                    onMouseDown={(e) => handleClipDragStart(e, track.id, clip)}
+                  >
+                    {/* Left resize handle */}
+                    <div
+                      className="animation-timeline__audio-clip-handle animation-timeline__audio-clip-handle--left"
+                      onMouseDown={(e) => handleClipResizeLeftStart(e, track.id, clip)}
+                    />
+
+                    {/* Clip label */}
+                    <span className="animation-timeline__audio-clip-label">
+                      {clip.name}
+                    </span>
+
+                    {/* Right resize handle */}
+                    <div
+                      className="animation-timeline__audio-clip-handle animation-timeline__audio-clip-handle--right"
+                      onMouseDown={(e) => handleClipResizeRightStart(e, track.id, clip)}
+                    />
+
+                    {/* Delete button */}
+                    <button
+                      className="animation-timeline__audio-clip-delete"
+                      onMouseDown={(e) => handleClipDelete(e, track.id, clip.id)}
+                      title="Remove clip"
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* Lane line — shifted below audio tracks */}
+            <div
+              className="animation-timeline__track-lane"
+              style={{ top: keyframeLaneOffset, transform: "none" }}
+            />
 
             {/* Filled portion between first and last keyframes */}
             {keyframes.length >= 2 && (
               <div
                 className="animation-timeline__track-filled"
                 style={{
+                  top: keyframeLaneOffset,
+                  transform: "none",
                   left: firstKeyframeTime * pixelsPerSecond,
                   width:
                     (lastKeyframeTime - firstKeyframeTime) *
@@ -721,7 +1080,7 @@ export const AnimationTimeline = ({
             )}
 
             {/* Empty state */}
-            {keyframes.length === 0 && (
+            {keyframes.length === 0 && audioTracks.length === 0 && (
               <div className="animation-timeline__empty">
                 <DiamondIcon />
                 <span>
@@ -735,21 +1094,21 @@ export const AnimationTimeline = ({
               <React.Fragment key={kf.id}>
                 <div
                   className={`animation-timeline__keyframe ${selectedKeyframeId === kf.id ? "animation-timeline__keyframe--selected" : ""} ${isDraggingKeyframe ? "animation-timeline__keyframe--dragging" : ""}`}
-                  style={{ left: kf.time * pixelsPerSecond }}
+                  style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset + 2, transform: "translate(-50%, -50%) rotate(45deg)" }}
                   onClick={(e) => handleKeyframeClick(e, kf)}
                   onMouseDown={(e) => handleKeyframeDragStart(e, kf)}
                   title={`${kf.label || "Keyframe"} at ${formatTime(kf.time)}`}
                 />
                 <span
                   className="animation-timeline__keyframe-time"
-                  style={{ left: kf.time * pixelsPerSecond }}
+                  style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset - 14 }}
                 >
                   {formatTime(kf.time)}
                 </span>
                 {kf.label && (
                   <span
                     className="animation-timeline__keyframe-label"
-                    style={{ left: kf.time * pixelsPerSecond }}
+                    style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset + 16 }}
                   >
                     {kf.label}
                   </span>
