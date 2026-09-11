@@ -192,6 +192,12 @@ export const AnimationTimeline = ({
   );
   const savedAppStateRef = useRef<Partial<AppState> | null>(null);
 
+  // True while we're the ones writing elements into the scene (seeking or
+  // playing back). The auto-keyframe-update effect below must ignore the
+  // version bumps this causes — otherwise every seek/frame would get
+  // "helpfully" saved back into the keyframe it was interpolated from.
+  const isApplyingOwnUpdateRef = useRef(false);
+
   // Subscribe to store updates
   useEffect(() => {
     const unsub = store.subscribe(setStoreState);
@@ -263,6 +269,7 @@ export const AnimationTimeline = ({
     } else {
       const interpolatedElements = getElementsAtTime(keyframes, time);
       if (interpolatedElements) {
+        isApplyingOwnUpdateRef.current = true;
         const sceneElements = app.scene.getElementsIncludingDeleted();
         const merged = sceneElements.map(el => {
           const interpolated = interpolatedElements.find(i => i.id === el.id);
@@ -270,6 +277,10 @@ export const AnimationTimeline = ({
         });
         const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
         app.scene.replaceAllElements([...merged, ...newElements]);
+        // Release after this render cycle's version bump has been observed.
+        requestAnimationFrame(() => {
+          isApplyingOwnUpdateRef.current = false;
+        });
       }
     }
   }, [store, engine, keyframes, app]);
@@ -305,6 +316,86 @@ export const AnimationTimeline = ({
       );
     }
   }, [app, store, currentTime, keyframes, activeFrameId, existingKf]);
+
+  // ── Auto-update the keyframe at the current time when the scene changes ──
+  //
+  // If the playhead is sitting on an existing keyframe and the user edits
+  // the canvas (moves/resizes/recolors something), keep that keyframe's
+  // snapshot in sync automatically instead of requiring an explicit
+  // "Update" click. Deliberately does NOT auto-*create* new keyframes —
+  // only keeps an already-placed one current.
+  const activeFrameElements = useMemo(
+    () => elements.filter((el) => el.frameId === activeFrameId),
+    [elements, activeFrameId],
+  );
+
+  // Cheap change signature — `version` is bumped by Excalidraw on every
+  // mutation, so id:version pairs tell us "something changed" without a
+  // deep-equal scan on every render.
+  const elementsSignature = useMemo(
+    () =>
+      activeFrameElements
+        .map((el) => `${el.id}:${el.version}`)
+        .sort()
+        .join("|"),
+    [activeFrameElements],
+  );
+
+  const autoUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const lastSyncedSignatureRef = useRef<string | null>(null);
+
+  // Landing on a keyframe — via mount/reload, switching active frames, or
+  // clicking a different keyframe — makes whatever's on canvas *right now*
+  // the known-good baseline for it. It is NOT itself a change to persist:
+  // right after a reload, `elements` is whatever Excalidraw's own
+  // localStorage restored (the last thing visible before the tab closed,
+  // which has nothing to do with this specific keyframe's saved content).
+  // Without this, `lastSyncedSignatureRef` starting at `null` made the
+  // very first render look like an edit, and the auto-save effect below
+  // would immediately overwrite the correct saved keyframe with whatever
+  // Excalidraw happened to restore.
+  useEffect(() => {
+    lastSyncedSignatureRef.current = elementsSignature;
+    // Only re-baseline when we've actually landed somewhere new — not on
+    // every keystroke-level signature change (that's the whole point).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingKf?.id, activeFrameId]);
+
+  useEffect(() => {
+    if (!activeFrameId || !existingKf) return;
+    // Playback/seek writes bump versions too — that's not a user edit.
+    if (isPlaying || engine.isActive() || isApplyingOwnUpdateRef.current) {
+      return;
+    }
+    if (lastSyncedSignatureRef.current === elementsSignature) return;
+
+    if (autoUpdateTimeoutRef.current) {
+      clearTimeout(autoUpdateTimeoutRef.current);
+    }
+    autoUpdateTimeoutRef.current = setTimeout(() => {
+      store.updateKeyframeSnapshot(existingKf.id, activeFrameElements);
+      lastSyncedSignatureRef.current = elementsSignature;
+    }, 400);
+
+    return () => {
+      if (autoUpdateTimeoutRef.current) {
+        clearTimeout(autoUpdateTimeoutRef.current);
+      }
+    };
+    // existingKf is derived fresh each render from keyframes/currentTime —
+    // depend on its id rather than the object identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    elementsSignature,
+    activeFrameId,
+    existingKf?.id,
+    isPlaying,
+    engine,
+    activeFrameElements,
+    store,
+  ]);
 
   const handleAudioUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -539,8 +630,12 @@ export const AnimationTimeline = ({
 
       // Restore original elements
       if (savedElementsRef.current) {
+        isApplyingOwnUpdateRef.current = true;
         app.scene.replaceAllElements(savedElementsRef.current);
         savedElementsRef.current = null;
+        requestAnimationFrame(() => {
+          isApplyingOwnUpdateRef.current = false;
+        });
       }
       if (savedAppStateRef.current) {
         setAppState(savedAppStateRef.current as any);
@@ -599,6 +694,7 @@ export const AnimationTimeline = ({
     }
 
     // Build and play
+    isApplyingOwnUpdateRef.current = true;
     engine.build(
       keyframes,
       (interpolatedElements, time) => {
@@ -626,6 +722,9 @@ export const AnimationTimeline = ({
             setAppState(savedAppStateRef.current as any);
             savedAppStateRef.current = null;
           }
+          requestAnimationFrame(() => {
+            isApplyingOwnUpdateRef.current = false;
+          });
         }, 500);
       },
     );

@@ -16,17 +16,40 @@ export const matchSnapshotElements = (
   unmatchedEnd: ExcalidrawElement[];
 } => {
   const pairs: [ExcalidrawElement, ExcalidrawElement][] = [];
-  const usedStartIndices = new Set<number>();
+
+  // ── Pass 1: match by stable id ──────────────────────────────────────────
+  // The common case is editing the *same* elements between keyframes, not
+  // swapping them out. Without this, two elements of the same type with
+  // similar bounding boxes (e.g. two arrows) can get cross-matched to each
+  // other by the geometric pass below, and each ends up morphing toward
+  // the wrong shape entirely instead of just not moving.
+  const usedStartIds = new Set<string>();
+  const usedEndIds = new Set<string>();
+  const endById = new Map(endEls.map((el) => [el.id, el]));
+
+  for (const startEl of startEls) {
+    const endEl = endById.get(startEl.id);
+    if (endEl && endEl.type === startEl.type) {
+      pairs.push([startEl, endEl]);
+      usedStartIds.add(startEl.id);
+      usedEndIds.add(endEl.id);
+    }
+  }
+
+  // ── Pass 2: geometric nearest-neighbor for genuine leftovers ────────────
+  // Only elements whose id truly doesn't exist on the other side (deleted,
+  // or newly drawn) — the Magic-Move-style diffing case.
+  const remainingStart = startEls.filter((el) => !usedStartIds.has(el.id));
+  const remainingEnd = endEls.filter((el) => !usedEndIds.has(el.id));
   const usedEndIndices = new Set<number>();
 
-  for (let i = 0; i < startEls.length; i++) {
-    const startEl = startEls[i];
+  for (const startEl of remainingStart) {
     let bestIdx = -1;
     let bestScore = Infinity;
 
-    for (let j = 0; j < endEls.length; j++) {
+    for (let j = 0; j < remainingEnd.length; j++) {
       if (usedEndIndices.has(j)) continue;
-      const endEl = endEls[j];
+      const endEl = remainingEnd[j];
 
       // Type must match
       if (startEl.type !== endEl.type) continue;
@@ -45,17 +68,19 @@ export const matchSnapshotElements = (
     }
 
     if (bestIdx !== -1) {
-      usedStartIndices.add(i);
       usedEndIndices.add(bestIdx);
-      pairs.push([startEl, endEls[bestIdx]]);
+      pairs.push([startEl, remainingEnd[bestIdx]]);
     }
   }
 
+  const matchedStartIds = new Set(pairs.map(([s]) => s.id));
+  const matchedEndIds = new Set(pairs.map(([, e]) => e.id));
+
   const unmatchedStart = startEls.filter(
-    (_, i) => !usedStartIndices.has(i),
+    (el) => !matchedStartIds.has(el.id),
   ) as ExcalidrawElement[];
   const unmatchedEnd = endEls.filter(
-    (_, j) => !usedEndIndices.has(j),
+    (el) => !matchedEndIds.has(el.id),
   ) as ExcalidrawElement[];
 
   return { pairs, unmatchedStart, unmatchedEnd };
