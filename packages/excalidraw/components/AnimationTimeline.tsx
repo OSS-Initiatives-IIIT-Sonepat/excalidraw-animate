@@ -470,7 +470,7 @@ export const AnimationTimeline = ({
         const mouseTime = getTimeFromMouseX(moveEvent.clientX);
         const newStart = Math.min(mouseTime, origEnd - 0.1);
         const newDuration = origEnd - Math.max(0, newStart);
-        store.resizeAudioClip(trackId, clip.id, Math.max(0, newStart), newDuration);
+        store.resizeAudioClip(trackId, clip.id, Math.max(0, newStart), newDuration, true);
       };
 
       const handleMouseUp = () => {
@@ -572,13 +572,28 @@ export const AnimationTimeline = ({
     [store, getTimeFromMouseX],
   );
 
-  const handleTrackClick = useCallback(
+  const handleTrackPointerDown = useCallback(
     (e: React.MouseEvent) => {
-      if (isDraggingKeyframe) return;
+      if (isDraggingKeyframe || draggingClipId || resizingClipId) return;
+      e.preventDefault();
+      
       const time = getTimeFromMouseX(e.clientX);
       seekToTime(time);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const moveTime = getTimeFromMouseX(moveEvent.clientX);
+        seekToTime(moveTime);
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
     },
-    [getTimeFromMouseX, isDraggingKeyframe, seekToTime],
+    [getTimeFromMouseX, isDraggingKeyframe, draggingClipId, resizingClipId, seekToTime],
   );
 
   const handlePlayheadDragStart = useCallback(
@@ -742,15 +757,30 @@ export const AnimationTimeline = ({
           const audio = new Audio(clip.audioUrl);
           const delay = clip.startTime - currentT;
           
+          const offset = clip.startOffset || 0;
+          
           if (delay > 0) {
              const timeoutId = setTimeout(() => {
+                audio.currentTime = offset;
                 audio.play().catch(e => console.error("Audio play error:", e));
+                
+                // Stop when clip ends
+                const stopId = setTimeout(() => {
+                   audio.pause();
+                }, clip.sourceDuration * 1000);
+                activeAudiosRef.current.push({ audio, timeoutId: stopId });
              }, delay * 1000);
              activeAudiosRef.current.push({ audio, timeoutId });
           } else {
-             audio.currentTime = -delay;
+             audio.currentTime = offset + (-delay);
              audio.play().catch(e => console.error("Audio play error:", e));
-             activeAudiosRef.current.push({ audio });
+             
+             // Stop when remaining duration ends
+             const remainingDuration = clip.sourceDuration - (-delay);
+             const stopId = setTimeout(() => {
+                audio.pause();
+             }, remainingDuration * 1000);
+             activeAudiosRef.current.push({ audio, timeoutId: stopId });
           }
         }
       });
@@ -994,7 +1024,7 @@ export const AnimationTimeline = ({
         <div
           className="animation-timeline__track-container"
           ref={trackContainerRef}
-          onClick={handleTrackClick}
+          onMouseDown={handleTrackPointerDown}
         >
           <div
             className="animation-timeline__track"

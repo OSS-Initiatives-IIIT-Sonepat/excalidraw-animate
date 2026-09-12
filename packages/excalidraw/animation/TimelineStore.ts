@@ -112,6 +112,8 @@ export interface AudioClip {
   sourceDuration: number;
   /** Position of the clip on the timeline in seconds */
   startTime: number;
+  /** How much of the audio to skip from the beginning (for left-trimming) */
+  startOffset?: number;
   /** Clip volume from 0 to 1 */
   volume: number;
   /** Whether this individual clip is muted */
@@ -423,6 +425,7 @@ export class TimelineStore {
     clipId: string,
     newStartTime: number,
     newDuration: number,
+    isLeftEdge: boolean = false,
   ) {
     const MIN_CLIP_DURATION = 0.1;
     const tracks = this.getActiveAudioTracks();
@@ -438,10 +441,18 @@ export class TimelineStore {
             clampedDuration,
             this.state.duration - clampedStart,
           );
+          
+          let newStartOffset = clip.startOffset || 0;
+          if (isLeftEdge) {
+            const timeDiff = clampedStart - clip.startTime;
+            newStartOffset = Math.max(0, newStartOffset + timeDiff);
+          }
+
           return {
             ...clip,
             startTime: clampedStart,
             sourceDuration: finalDuration,
+            startOffset: newStartOffset,
           };
         }),
       };
@@ -486,7 +497,7 @@ export class TimelineStore {
   }
 
   setPixelsPerSecond(pps: number) {
-    this.setState({ pixelsPerSecond: Math.max(20, Math.min(pps, 400)) });
+    this.setState({ pixelsPerSecond: Math.max(1, pps) });
   }
 
   setScrollOffset(offset: number) {
