@@ -575,7 +575,6 @@ export const AnimationTimeline = ({
   const handleTrackPointerDown = useCallback(
     (e: React.MouseEvent) => {
       if (isDraggingKeyframe || draggingClipId || resizingClipId) return;
-      e.preventDefault();
       
       const time = getTimeFromMouseX(e.clientX);
       seekToTime(time);
@@ -619,7 +618,7 @@ export const AnimationTimeline = ({
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
     },
-    [store, engine, getTimeFromMouseX],
+    [store, engine, getTimeFromMouseX, seekToTime],
   );
 
   // ── Playback ──
