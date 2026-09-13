@@ -593,17 +593,17 @@
   },
   "welcomeScreen": {
     "app": {
-      "center_heading": "Your drawings are saved in your browser's storage.",
+      "center_heading": "Your scenes and keyframes are saved in your browser's storage.",
       "center_heading_line2": "Browser storage can be cleared unexpectedly.",
       "center_heading_line3": "Save your work to a file regularly to avoid losing it.",
-      "center_heading_plus": "Did you want to go to the Excalidraw+ instead?",
+      "center_heading_plus": "Looking for the original whiteboard? Try excalidraw.com instead.",
       "menuHint": "Export, preferences, languages, ..."
     },
     "defaults": {
       "menuHint": "Export, preferences, and more...",
-      "center_heading": "Diagrams. Made. Simple.",
-      "toolbarHint": "Pick a tool & Start drawing!",
-      "helpHint": "Shortcuts & help"
+      "center_heading": "Draw it. Animate it.",
+      "toolbarHint": "Pick a tool, sketch a scene — then hit play.",
+      "helpHint": "Shortcuts, timeline & help"
     }
   },
   "colorPicker": {
