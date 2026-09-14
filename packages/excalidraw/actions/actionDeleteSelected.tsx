@@ -31,6 +31,7 @@ import { TrashIcon } from "../components/icons";
 import { IconButton } from "../components/IconButton";
 
 import { useStylesPanelMode } from "../components/App";
+import { getTimelineStore } from "../animation/TimelineStore";
 
 import { register } from "./register";
 
@@ -272,8 +273,19 @@ export const actionDeleteSelected = register({
       };
     }
 
+    const framesToBeDeleted = new Set(
+      getSelectedElements(
+        elements.filter((el) => isFrameLikeElement(el)),
+        appState,
+      ).map((el) => el.id),
+    );
+
     let { elements: nextElements, appState: nextAppState } =
       deleteSelectedElements(elements, appState, app);
+
+    for (const frameId of framesToBeDeleted) {
+      getTimelineStore().removeFrame(frameId);
+    }
 
     fixBindingsAfterDeletion(
       nextElements,

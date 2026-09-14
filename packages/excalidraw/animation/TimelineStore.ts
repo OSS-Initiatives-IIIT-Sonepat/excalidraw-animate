@@ -579,6 +579,23 @@ export class TimelineStore {
     );
   }
 
+  removeFrame(frameId: string) {
+    const removedTracks = this.state.audioTracksByFrame[frameId] || [];
+    for (const track of removedTracks) {
+      for (const clip of track.clips) {
+        if (clip.audioUrl) URL.revokeObjectURL(clip.audioUrl);
+      }
+    }
+
+    const { [frameId]: _removedKeyframes, ...keyframesByFrame } =
+      this.state.keyframesByFrame;
+    const { [frameId]: _removedAudioTracks, ...audioTracksByFrame } =
+      this.state.audioTracksByFrame;
+
+    this.setState({ keyframesByFrame, audioTracksByFrame });
+    void clearObsoleteAudio(collectUsedAudioFileIds(audioTracksByFrame));
+  }
+
   // ── Playback Controls ──
 
   setCurrentTime(time: number) {
