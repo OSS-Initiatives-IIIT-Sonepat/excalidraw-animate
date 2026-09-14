@@ -9,10 +9,7 @@ import { nanoid } from "nanoid";
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, UIAppState, AppClassProperties } from "../types";
-import {
-  getTimelineStore,
-  type Keyframe,
-} from "../animation/TimelineStore";
+import { getTimelineStore, type Keyframe } from "../animation/TimelineStore";
 import { saveAudioToIndexedDB } from "../animation/AudioIndexedDB";
 import {
   GsapAnimationEngine,
@@ -145,7 +142,6 @@ const AudioIcon = () => (
   </svg>
 );
 
-
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const formatTime = (seconds: number): string => {
@@ -174,9 +170,9 @@ export const AnimationTimeline = ({
   const engine = useMemo(() => getGsapEngine(), []);
 
   const [storeState, setStoreState] = useState(store.getState());
-  const [selectedKeyframeId, setSelectedKeyframeId] = useState<
-    string | null
-  >(null);
+  const [selectedKeyframeId, setSelectedKeyframeId] = useState<string | null>(
+    null,
+  );
   const [isDraggingKeyframe, setIsDraggingKeyframe] = useState(false);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -188,10 +184,10 @@ export const AnimationTimeline = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const playheadDragRef = useRef(false);
   const animFrameRef = useRef<number | null>(null);
-  const activeAudiosRef = useRef<{audio: HTMLAudioElement, timeoutId?: NodeJS.Timeout}[]>([]);
-  const savedElementsRef = useRef<readonly ExcalidrawElement[] | null>(
-    null,
-  );
+  const activeAudiosRef = useRef<
+    { audio: HTMLAudioElement; timeoutId?: NodeJS.Timeout }[]
+  >([]);
+  const savedElementsRef = useRef<readonly ExcalidrawElement[] | null>(null);
   const savedAppStateRef = useRef<Partial<AppState> | null>(null);
 
   // True while we're the ones writing elements into the scene (seeking or
@@ -215,7 +211,9 @@ export const AnimationTimeline = ({
   const { duration, currentTime, pixelsPerSecond, activeFrameId } = storeState;
   const keyframes = store.getActiveKeyframes();
   const trackWidth = duration * pixelsPerSecond;
-  const existingKf = keyframes.find(kf => Math.abs(kf.time - currentTime) < 0.05);
+  const existingKf = keyframes.find(
+    (kf) => Math.abs(kf.time - currentTime) < 0.05,
+  );
 
   // Generate ruler marks
   const rulerMarks = useMemo(() => {
@@ -227,7 +225,10 @@ export const AnimationTimeline = ({
     else if (pixelsPerSecond > 150) interval = 0.5;
 
     for (let t = 0; t <= duration; t += interval) {
-      marks.push({ time: t, isMajor: t % (interval * 2) === 0 || interval >= 1 });
+      marks.push({
+        time: t,
+        isMajor: t % (interval * 2) === 0 || interval >= 1,
+      });
     }
     return marks;
   }, [duration, pixelsPerSecond]);
@@ -248,14 +249,16 @@ export const AnimationTimeline = ({
     );
 
     let foundFrameId: string | null = null;
-    
+
     if (selectedIds.length > 0) {
       const firstSelected = elements.find((el) => el.id === selectedIds[0]);
       if (firstSelected) {
         if (firstSelected.type === "animationframe") {
           foundFrameId = firstSelected.id;
         } else if (firstSelected.frameId) {
-          const parentFrame = elements.find((el) => el.id === firstSelected.frameId);
+          const parentFrame = elements.find(
+            (el) => el.id === firstSelected.frameId,
+          );
           if (parentFrame && parentFrame.type === "animationframe") {
             foundFrameId = parentFrame.id;
           }
@@ -268,28 +271,35 @@ export const AnimationTimeline = ({
     }
   }, [appState.selectedElementIds, elements, storeState.activeFrameId, store]);
 
-  const seekToTime = useCallback((time: number) => {
-    store.setCurrentTime(time);
-    if (engine.isActive()) {
-      engine.seek(time);
-    } else {
-      const interpolatedElements = getElementsAtTime(keyframes, time);
-      if (interpolatedElements) {
-        isApplyingOwnUpdateRef.current = true;
-        const sceneElements = app.scene.getElementsIncludingDeleted();
-        const merged = sceneElements.map(el => {
-          const interpolated = interpolatedElements.find(i => i.id === el.id);
-          return interpolated || el;
-        });
-        const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
-        app.scene.replaceAllElements([...merged, ...newElements]);
-        // Release after this render cycle's version bump has been observed.
-        requestAnimationFrame(() => {
-          isApplyingOwnUpdateRef.current = false;
-        });
+  const seekToTime = useCallback(
+    (time: number) => {
+      store.setCurrentTime(time);
+      if (engine.isActive()) {
+        engine.seek(time);
+      } else {
+        const interpolatedElements = getElementsAtTime(keyframes, time);
+        if (interpolatedElements) {
+          isApplyingOwnUpdateRef.current = true;
+          const sceneElements = app.scene.getElementsIncludingDeleted();
+          const merged = sceneElements.map((el) => {
+            const interpolated = interpolatedElements.find(
+              (i) => i.id === el.id,
+            );
+            return interpolated || el;
+          });
+          const newElements = interpolatedElements.filter(
+            (i) => !sceneElements.some((el) => el.id === i.id),
+          );
+          app.scene.replaceAllElements([...merged, ...newElements]);
+          // Release after this render cycle's version bump has been observed.
+          requestAnimationFrame(() => {
+            isApplyingOwnUpdateRef.current = false;
+          });
+        }
       }
-    }
-  }, [store, engine, keyframes, app]);
+    },
+    [store, engine, keyframes, app],
+  );
 
   const getTimeFromMouseX = useCallback(
     (clientX: number): number => {
@@ -310,16 +320,12 @@ export const AnimationTimeline = ({
       .getNonDeletedElements()
       .filter((el: ExcalidrawElement) => el.frameId === activeFrameId)
       .map((el: ExcalidrawElement) => ({ ...el }));
-      
+
     if (existingKf) {
       store.updateKeyframeSnapshot(existingKf.id, currentElements);
     } else {
       const kfCount = keyframes.length + 1;
-      store.addKeyframe(
-        currentTime,
-        currentElements,
-        `Scene ${kfCount}`,
-      );
+      store.addKeyframe(currentTime, currentElements, `Scene ${kfCount}`);
     }
   }, [app, store, currentTime, keyframes, activeFrameId, existingKf]);
 
@@ -445,7 +451,11 @@ export const AnimationTimeline = ({
   // ── Audio clip drag ──
 
   const handleClipDragStart = useCallback(
-    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number }) => {
+    (
+      e: React.MouseEvent,
+      trackId: string,
+      clip: { id: string; startTime: number },
+    ) => {
       e.preventDefault();
       e.stopPropagation();
       const startMouseTime = getTimeFromMouseX(e.clientX);
@@ -472,7 +482,11 @@ export const AnimationTimeline = ({
   // ── Audio clip resize (left edge) ──
 
   const handleClipResizeLeftStart = useCallback(
-    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number; sourceDuration: number }) => {
+    (
+      e: React.MouseEvent,
+      trackId: string,
+      clip: { id: string; startTime: number; sourceDuration: number },
+    ) => {
       e.preventDefault();
       e.stopPropagation();
       const origStart = clip.startTime;
@@ -483,7 +497,13 @@ export const AnimationTimeline = ({
         const mouseTime = getTimeFromMouseX(moveEvent.clientX);
         const newStart = Math.min(mouseTime, origEnd - 0.1);
         const newDuration = origEnd - Math.max(0, newStart);
-        store.resizeAudioClip(trackId, clip.id, Math.max(0, newStart), newDuration, true);
+        store.resizeAudioClip(
+          trackId,
+          clip.id,
+          Math.max(0, newStart),
+          newDuration,
+          true,
+        );
       };
 
       const handleMouseUp = () => {
@@ -501,7 +521,11 @@ export const AnimationTimeline = ({
   // ── Audio clip resize (right edge) ──
 
   const handleClipResizeRightStart = useCallback(
-    (e: React.MouseEvent, trackId: string, clip: { id: string; startTime: number; sourceDuration: number }) => {
+    (
+      e: React.MouseEvent,
+      trackId: string,
+      clip: { id: string; startTime: number; sourceDuration: number },
+    ) => {
       e.preventDefault();
       e.stopPropagation();
       const origStart = clip.startTime;
@@ -588,7 +612,7 @@ export const AnimationTimeline = ({
   const handleTrackPointerDown = useCallback(
     (e: React.MouseEvent) => {
       if (isDraggingKeyframe || draggingClipId || resizingClipId) return;
-      
+
       const time = getTimeFromMouseX(e.clientX);
       seekToTime(time);
 
@@ -605,7 +629,13 @@ export const AnimationTimeline = ({
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
     },
-    [getTimeFromMouseX, isDraggingKeyframe, draggingClipId, resizingClipId, seekToTime],
+    [
+      getTimeFromMouseX,
+      isDraggingKeyframe,
+      draggingClipId,
+      resizingClipId,
+      seekToTime,
+    ],
   );
 
   const handlePlayheadDragStart = useCallback(
@@ -685,13 +715,15 @@ export const AnimationTimeline = ({
     };
 
     // Calculate viewport to focus on elements
-    const allElements = keyframes.flatMap((kf: Keyframe) => kf.elementSnapshots) as ExcalidrawElement[];
+    const allElements = keyframes.flatMap(
+      (kf: Keyframe) => kf.elementSnapshots,
+    ) as ExcalidrawElement[];
     if (allElements.length > 0) {
       const bounds = getCommonBounds(allElements);
       const [minX, minY, maxX, maxY] = bounds;
       const width = maxX - minX;
       const height = maxY - minY;
-      
+
       // Use a generous padding so the animation doesn't hug the screen edges
       const paddingX = Math.max(200, appState.width * 0.25);
       const paddingY = Math.max(200, appState.height * 0.25);
@@ -725,12 +757,15 @@ export const AnimationTimeline = ({
     engine.build(
       keyframes,
       (interpolatedElements, time) => {
-        const sceneElements = savedElementsRef.current || app.scene.getElementsIncludingDeleted();
-        const merged = sceneElements.map(el => {
-          const interpolated = interpolatedElements.find(i => i.id === el.id);
+        const sceneElements =
+          savedElementsRef.current || app.scene.getElementsIncludingDeleted();
+        const merged = sceneElements.map((el) => {
+          const interpolated = interpolatedElements.find((i) => i.id === el.id);
           return interpolated || el;
         });
-        const newElements = interpolatedElements.filter(i => !sceneElements.some(el => el.id === i.id));
+        const newElements = interpolatedElements.filter(
+          (i) => !sceneElements.some((el) => el.id === i.id),
+        );
         app.scene.replaceAllElements([...merged, ...newElements]);
         store.setCurrentTime(time);
       },
@@ -763,36 +798,36 @@ export const AnimationTimeline = ({
     // Play audio clips
     const tracks = store.getActiveAudioTracks();
     const currentT = store.getState().currentTime;
-    tracks.forEach(track => {
-      track.clips.forEach(clip => {
+    tracks.forEach((track) => {
+      track.clips.forEach((clip) => {
         if (clip.startTime + clip.sourceDuration > currentT) {
           const audio = new Audio(clip.audioUrl);
           const delay = clip.startTime - currentT;
-          
+
           const offset = clip.startOffset || 0;
-          
+
           if (delay > 0) {
-             const timeoutId = setTimeout(() => {
-                audio.currentTime = offset;
-                audio.play().catch(e => console.error("Audio play error:", e));
-                
-                // Stop when clip ends
-                const stopId = setTimeout(() => {
-                   audio.pause();
-                }, clip.sourceDuration * 1000);
-                activeAudiosRef.current.push({ audio, timeoutId: stopId });
-             }, delay * 1000);
-             activeAudiosRef.current.push({ audio, timeoutId });
-          } else {
-             audio.currentTime = offset + (-delay);
-             audio.play().catch(e => console.error("Audio play error:", e));
-             
-             // Stop when remaining duration ends
-             const remainingDuration = clip.sourceDuration - (-delay);
-             const stopId = setTimeout(() => {
+            const timeoutId = setTimeout(() => {
+              audio.currentTime = offset;
+              audio.play().catch((e) => console.error("Audio play error:", e));
+
+              // Stop when clip ends
+              const stopId = setTimeout(() => {
                 audio.pause();
-             }, remainingDuration * 1000);
-             activeAudiosRef.current.push({ audio, timeoutId: stopId });
+              }, clip.sourceDuration * 1000);
+              activeAudiosRef.current.push({ audio, timeoutId: stopId });
+            }, delay * 1000);
+            activeAudiosRef.current.push({ audio, timeoutId });
+          } else {
+            audio.currentTime = offset + -delay;
+            audio.play().catch((e) => console.error("Audio play error:", e));
+
+            // Stop when remaining duration ends
+            const remainingDuration = clip.sourceDuration - -delay;
+            const stopId = setTimeout(() => {
+              audio.pause();
+            }, remainingDuration * 1000);
+            activeAudiosRef.current.push({ audio, timeoutId: stopId });
           }
         }
       });
@@ -869,11 +904,25 @@ export const AnimationTimeline = ({
   if (!activeFrameId) {
     return (
       <div className="animation-timeline">
-        <div className="animation-timeline__controls" style={{ justifyContent: 'space-between' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-gray-50)', fontWeight: 500, padding: '0 0.5rem' }}>
+        <div
+          className="animation-timeline__controls"
+          style={{ justifyContent: "space-between" }}
+        >
+          <div
+            style={{
+              fontSize: "0.8rem",
+              color: "var(--color-gray-50)",
+              fontWeight: 500,
+              padding: "0 0.5rem",
+            }}
+          >
             Select an animation frame on the canvas to edit its timeline.
           </div>
-          <button className="animation-timeline__close-btn" onClick={handleClose} title="Close timeline">
+          <button
+            className="animation-timeline__close-btn"
+            onClick={handleClose}
+            title="Close timeline"
+          >
             <CloseIcon />
           </button>
         </div>
@@ -907,7 +956,9 @@ export const AnimationTimeline = ({
           </button>
 
           <button
-            className={`animation-timeline__play-btn ${isPlaying ? "animation-timeline__play-btn--playing" : ""}`}
+            className={`animation-timeline__play-btn ${
+              isPlaying ? "animation-timeline__play-btn--playing" : ""
+            }`}
             onClick={handlePlay}
             title={isPlaying ? "Stop" : "Play"}
           >
@@ -929,9 +980,15 @@ export const AnimationTimeline = ({
           <div className="animation-timeline__divider" />
 
           <button
-            className={`animation-timeline__add-keyframe-btn ${existingKf ? "animation-timeline__add-keyframe-btn--update" : ""}`}
+            className={`animation-timeline__add-keyframe-btn ${
+              existingKf ? "animation-timeline__add-keyframe-btn--update" : ""
+            }`}
             onClick={handleAddKeyframe}
-            title={existingKf ? "Update keyframe at current time" : "Add keyframe at current time"}
+            title={
+              existingKf
+                ? "Update keyframe at current time"
+                : "Add keyframe at current time"
+            }
           >
             {existingKf ? <UpdateIcon /> : <PlusIcon />}
             {existingKf ? "Update" : "Keyframe"}
@@ -1014,7 +1071,11 @@ export const AnimationTimeline = ({
                 style={{ left: mark.time * pixelsPerSecond }}
               >
                 <div
-                  className={`animation-timeline__ruler-mark-line ${mark.isMajor ? "animation-timeline__ruler-mark-line--major" : "animation-timeline__ruler-mark-line--minor"}`}
+                  className={`animation-timeline__ruler-mark-line ${
+                    mark.isMajor
+                      ? "animation-timeline__ruler-mark-line--major"
+                      : "animation-timeline__ruler-mark-line--minor"
+                  }`}
                 />
                 {mark.isMajor && (
                   <span className="animation-timeline__ruler-mark-label">
@@ -1062,7 +1123,15 @@ export const AnimationTimeline = ({
                 {track.clips.map((clip) => (
                   <div
                     key={clip.id}
-                    className={`animation-timeline__audio-clip ${draggingClipId === clip.id ? "animation-timeline__audio-clip--dragging" : ""} ${resizingClipId === clip.id ? "animation-timeline__audio-clip--resizing" : ""}`}
+                    className={`animation-timeline__audio-clip ${
+                      draggingClipId === clip.id
+                        ? "animation-timeline__audio-clip--dragging"
+                        : ""
+                    } ${
+                      resizingClipId === clip.id
+                        ? "animation-timeline__audio-clip--resizing"
+                        : ""
+                    }`}
                     style={{
                       left: clip.startTime * pixelsPerSecond,
                       width: Math.max(clip.sourceDuration * pixelsPerSecond, 6),
@@ -1073,7 +1142,9 @@ export const AnimationTimeline = ({
                     {/* Left resize handle */}
                     <div
                       className="animation-timeline__audio-clip-handle animation-timeline__audio-clip-handle--left"
-                      onMouseDown={(e) => handleClipResizeLeftStart(e, track.id, clip)}
+                      onMouseDown={(e) =>
+                        handleClipResizeLeftStart(e, track.id, clip)
+                      }
                     />
 
                     {/* Clip label */}
@@ -1084,13 +1155,17 @@ export const AnimationTimeline = ({
                     {/* Right resize handle */}
                     <div
                       className="animation-timeline__audio-clip-handle animation-timeline__audio-clip-handle--right"
-                      onMouseDown={(e) => handleClipResizeRightStart(e, track.id, clip)}
+                      onMouseDown={(e) =>
+                        handleClipResizeRightStart(e, track.id, clip)
+                      }
                     />
 
                     {/* Delete button */}
                     <button
                       className="animation-timeline__audio-clip-delete"
-                      onMouseDown={(e) => handleClipDelete(e, track.id, clip.id)}
+                      onMouseDown={(e) =>
+                        handleClipDelete(e, track.id, clip.id)
+                      }
                       title="Remove clip"
                     >
                       <CloseIcon />
@@ -1115,8 +1190,7 @@ export const AnimationTimeline = ({
                   transform: "none",
                   left: firstKeyframeTime * pixelsPerSecond,
                   width:
-                    (lastKeyframeTime - firstKeyframeTime) *
-                    pixelsPerSecond,
+                    (lastKeyframeTime - firstKeyframeTime) * pixelsPerSecond,
                 }}
               />
             )}
@@ -1125,9 +1199,7 @@ export const AnimationTimeline = ({
             {keyframes.length === 0 && audioTracks.length === 0 && (
               <div className="animation-timeline__empty">
                 <DiamondIcon />
-                <span>
-                  Click &quot;+ Keyframe&quot; to capture a scene
-                </span>
+                <span>Click &quot;+ Keyframe&quot; to capture a scene</span>
               </div>
             )}
 
@@ -1135,22 +1207,40 @@ export const AnimationTimeline = ({
             {keyframes.map((kf: Keyframe) => (
               <React.Fragment key={kf.id}>
                 <div
-                  className={`animation-timeline__keyframe ${selectedKeyframeId === kf.id ? "animation-timeline__keyframe--selected" : ""} ${isDraggingKeyframe ? "animation-timeline__keyframe--dragging" : ""}`}
-                  style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset + 2, transform: "translate(-50%, -50%) rotate(45deg)" }}
+                  className={`animation-timeline__keyframe ${
+                    selectedKeyframeId === kf.id
+                      ? "animation-timeline__keyframe--selected"
+                      : ""
+                  } ${
+                    isDraggingKeyframe
+                      ? "animation-timeline__keyframe--dragging"
+                      : ""
+                  }`}
+                  style={{
+                    left: kf.time * pixelsPerSecond,
+                    top: keyframeLaneOffset + 2,
+                    transform: "translate(-50%, -50%) rotate(45deg)",
+                  }}
                   onClick={(e) => handleKeyframeClick(e, kf)}
                   onMouseDown={(e) => handleKeyframeDragStart(e, kf)}
                   title={`${kf.label || "Keyframe"} at ${formatTime(kf.time)}`}
                 />
                 <span
                   className="animation-timeline__keyframe-time"
-                  style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset - 14 }}
+                  style={{
+                    left: kf.time * pixelsPerSecond,
+                    top: keyframeLaneOffset - 14,
+                  }}
                 >
                   {formatTime(kf.time)}
                 </span>
                 {kf.label && (
                   <span
                     className="animation-timeline__keyframe-label"
-                    style={{ left: kf.time * pixelsPerSecond, top: keyframeLaneOffset + 16 }}
+                    style={{
+                      left: kf.time * pixelsPerSecond,
+                      top: keyframeLaneOffset + 16,
+                    }}
                   >
                     {kf.label}
                   </span>
@@ -1167,8 +1257,6 @@ export const AnimationTimeline = ({
           </div>
         </div>
       </div>
-
-
     </>
   );
 };

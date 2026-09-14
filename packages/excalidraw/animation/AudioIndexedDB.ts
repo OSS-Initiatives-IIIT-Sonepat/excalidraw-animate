@@ -98,7 +98,9 @@ export const loadAudioFromIndexedDB = async (
 };
 
 /** Delete a single audio entry from IndexedDB. */
-export const deleteAudioFromIndexedDB = async (fileId: string): Promise<void> => {
+export const deleteAudioFromIndexedDB = async (
+  fileId: string,
+): Promise<void> => {
   const db = await openDB();
 
   return new Promise((resolve, reject) => {

@@ -1,10 +1,7 @@
 import { nanoid } from "nanoid";
 import { debounce } from "@excalidraw/common";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
-import {
-  loadAudioFromIndexedDB,
-  clearObsoleteAudio,
-} from "./AudioIndexedDB";
+import { loadAudioFromIndexedDB, clearObsoleteAudio } from "./AudioIndexedDB";
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 // Mirrors how excalidraw-app itself persists the scene: keep the actual saved
@@ -35,7 +32,9 @@ type PersistedTimelineState = Pick<
 
 /** Collect every fileId currently referenced by clips across all frames. */
 const collectUsedAudioFileIds = (
-  tracksByFrame: Record<string, AudioTrack[]> | Record<string, PersistedAudioTrack[]>,
+  tracksByFrame:
+    | Record<string, AudioTrack[]>
+    | Record<string, PersistedAudioTrack[]>,
 ): Set<string> => {
   const ids = new Set<string>();
   for (const tracks of Object.values(tracksByFrame)) {
@@ -307,9 +306,11 @@ export class TimelineStore {
 
         return {
           ...track,
-          clips: track.clips.map((clip) =>
-            hydratedTrack.clips.find((candidate) => candidate.id === clip.id) ||
-            clip,
+          clips: track.clips.map(
+            (clip) =>
+              hydratedTrack.clips.find(
+                (candidate) => candidate.id === clip.id,
+              ) || clip,
           ),
         };
       });
@@ -543,7 +544,7 @@ export class TimelineStore {
             clampedDuration,
             this.state.duration - clampedStart,
           );
-          
+
           let newStartOffset = clip.startOffset || 0;
           if (isLeftEdge) {
             const timeDiff = clampedStart - clip.startTime;
@@ -573,7 +574,9 @@ export class TimelineStore {
     // Remove empty tracks
     tracks = tracks.filter((track) => track.clips.length > 0);
     this.setActiveAudioTracks(tracks);
-    void clearObsoleteAudio(collectUsedAudioFileIds(this.state.audioTracksByFrame));
+    void clearObsoleteAudio(
+      collectUsedAudioFileIds(this.state.audioTracksByFrame),
+    );
   }
 
   // ── Playback Controls ──
