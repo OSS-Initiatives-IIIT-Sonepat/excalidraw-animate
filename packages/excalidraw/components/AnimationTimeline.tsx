@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useMemo,
 } from "react";
+import { nanoid } from "nanoid";
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, UIAppState, AppClassProperties } from "../types";
@@ -12,6 +13,7 @@ import {
   getTimelineStore,
   type Keyframe,
 } from "../animation/TimelineStore";
+import { saveAudioToIndexedDB } from "../animation/AudioIndexedDB";
 import {
   GsapAnimationEngine,
   getGsapEngine,
@@ -202,6 +204,10 @@ export const AnimationTimeline = ({
   useEffect(() => {
     const unsub = store.subscribe(setStoreState);
     return unsub;
+  }, [store]);
+
+  useEffect(() => {
+    void store.hydrateAudio();
   }, [store]);
 
   // ── Computed values ──
@@ -397,37 +403,44 @@ export const AnimationTimeline = ({
     store,
   ]);
 
-  const handleAudioUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleAudioUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    const audioUrl = URL.createObjectURL(file);
-    const audio = new Audio(audioUrl);
-    
-    audio.addEventListener('loadedmetadata', () => {
-      const clipDuration = audio.duration;
-      
-      // Always create a new track for each upload so clips stack vertically
-      const trackCount = store.getActiveAudioTracks().length;
-      const track = store.addAudioTrack(`Track ${trackCount + 1}`);
-      
-      if (track) {
-        store.addAudioClip(track.id, {
-          name: file.name,
-          audioUrl,
-          sourceDuration: clipDuration,
-          startTime: currentTime,
-          volume: 1,
-          muted: false
-        });
-      }
-      
-      // Reset input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    });
-  }, [store, currentTime]);
+      const fileId = nanoid();
+      const audioUrl = URL.createObjectURL(file);
+      const audio = new Audio(audioUrl);
+
+      audio.addEventListener("loadedmetadata", () => {
+        void saveAudioToIndexedDB(fileId, file)
+          .then(() => {
+            const trackCount = store.getActiveAudioTracks().length;
+            const track = store.addAudioTrack(`Track ${trackCount + 1}`);
+
+            if (track) {
+              store.addAudioClip(track.id, {
+                name: file.name,
+                audioUrl,
+                fileId,
+                sourceDuration: audio.duration,
+                startTime: currentTime,
+                volume: 1,
+                muted: false,
+              });
+            }
+          })
+          .catch((error) => {
+            console.error("[AnimationTimeline] failed to save audio:", error);
+            URL.revokeObjectURL(audioUrl);
+          })
+          .finally(() => {
+            if (fileInputRef.current) fileInputRef.current.value = "";
+          });
+      });
+    },
+    [store, currentTime],
+  );
 
   // ── Audio clip drag ──
 

@@ -1,6 +1,10 @@
 import { nanoid } from "nanoid";
 import { debounce } from "@excalidraw/common";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
+import {
+  loadAudioFromIndexedDB,
+  clearObsoleteAudio,
+} from "./AudioIndexedDB";
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 // Mirrors how excalidraw-app itself persists the scene: keep the actual saved
@@ -8,21 +12,41 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 // open, scroll), and debounce writes so we're not hitting localStorage on
 // every playhead tick.
 //
-// Audio clips are deliberately NOT persisted here: `audioUrl` is a
-// `URL.createObjectURL(file)` blob URL, which only lives as long as the
-// Blob does in memory — it does not survive a reload, so saving it would
-// just save a dead reference. Persisting audio for real needs the actual
-// file bytes (base64 in IndexedDB, most likely — localStorage's ~5-10MB
-// quota won't hold much audio). Flagging as a follow-up rather than doing
-// it silently-wrong.
+// Audio clips metadata is persisted to localStorage, but the actual raw audio
+// bytes live in IndexedDB (see AudioIndexedDB.ts). On load we hydrate
+// `audioUrl` from the stored bytes by creating fresh blob URLs.
 
 const STORAGE_KEY = "excalidraw-animate:timeline";
 const SAVE_DEBOUNCE_MS = 300;
 
+/** Serializable clip data — audioUrl is stripped because blob URLs die on reload. */
+type PersistedAudioClip = Omit<AudioClip, "audioUrl">;
+
+type PersistedAudioTrack = Omit<AudioTrack, "clips"> & {
+  clips: PersistedAudioClip[];
+};
+
 type PersistedTimelineState = Pick<
   TimelineState,
   "keyframesByFrame" | "duration" | "pixelsPerSecond"
->;
+> & {
+  audioTracksByFrame?: Record<string, PersistedAudioTrack[]>;
+};
+
+/** Collect every fileId currently referenced by clips across all frames. */
+const collectUsedAudioFileIds = (
+  tracksByFrame: Record<string, AudioTrack[]> | Record<string, PersistedAudioTrack[]>,
+): Set<string> => {
+  const ids = new Set<string>();
+  for (const tracks of Object.values(tracksByFrame)) {
+    for (const track of tracks) {
+      for (const clip of track.clips) {
+        if (clip.fileId) ids.add(clip.fileId);
+      }
+    }
+  }
+  return ids;
+};
 
 const loadPersistedState = (): Partial<TimelineState> | null => {
   try {
@@ -30,7 +54,13 @@ const loadPersistedState = (): Partial<TimelineState> | null => {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
-    return parsed as Partial<TimelineState>;
+
+    // audioTracksByFrame may be absent in older saves — that's fine.
+    const { audioTracksByFrame, ...rest } = parsed;
+    return {
+      ...rest,
+      audioTracksByFrame: audioTracksByFrame || {},
+    } as Partial<TimelineState>;
   } catch (error) {
     console.error("[TimelineStore] failed to load from localStorage:", error);
     return null;
@@ -39,8 +69,21 @@ const loadPersistedState = (): Partial<TimelineState> | null => {
 
 const savePersistedStateNow = (state: TimelineState) => {
   try {
+    // Strip runtime blob URLs before serialising — we re-create them on load.
+    const strippedTracks: Record<string, PersistedAudioTrack[]> = {};
+    for (const [frameId, tracks] of Object.entries(state.audioTracksByFrame)) {
+      strippedTracks[frameId] = tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          const { audioUrl: _drop, ...persisted } = clip;
+          return persisted;
+        }),
+      }));
+    }
+
     const toSave: PersistedTimelineState = {
       keyframesByFrame: state.keyframesByFrame,
+      audioTracksByFrame: strippedTracks,
       duration: state.duration,
       pixelsPerSecond: state.pixelsPerSecond,
     };
@@ -106,8 +149,10 @@ export interface AudioClip {
   id: string;
   /** Name shown in timeline */
   name: string;
-  /** Temporary URL pointing to uploaded audio file */
+  /** Runtime blob URL — recreated from IndexedDB bytes on every load. */
   audioUrl: string;
+  /** Unique key into IndexedDB audio store (same as the id used at save time). */
+  fileId: string;
   /** Original duration of the audio in seconds */
   sourceDuration: number;
   /** Position of the clip on the timeline in seconds */
@@ -204,16 +249,73 @@ export class TimelineStore {
     this.state = { ...this.state, ...updates };
     this.notify();
 
-    // currentTime/isPlaying/isOpen/scrollOffset/audioTracksByFrame change
-    // constantly (or aren't safe to restore, in audio's case) — only
+    // currentTime/isPlaying/isOpen/scrollOffset change constantly; only
     // persist the actual saved data.
     if (
       "keyframesByFrame" in updates ||
       "duration" in updates ||
-      "pixelsPerSecond" in updates
+      "pixelsPerSecond" in updates ||
+      "audioTracksByFrame" in updates
     ) {
       this.persistDebounced();
     }
+  }
+
+  /** Recreate blob URLs for audio metadata restored from localStorage. */
+  async hydrateAudio(): Promise<void> {
+    const tracksByFrame = this.state.audioTracksByFrame;
+    const hydratedTracksByFrame: Record<string, AudioTrack[]> = {};
+
+    await Promise.all(
+      Object.entries(tracksByFrame).map(async ([frameId, tracks]) => {
+        hydratedTracksByFrame[frameId] = await Promise.all(
+          tracks.map(async (track) => ({
+            ...track,
+            clips: await Promise.all(
+              track.clips.map(async (clip) => {
+                if (clip.audioUrl || !clip.fileId) return clip;
+                try {
+                  const blob = await loadAudioFromIndexedDB(clip.fileId);
+                  return blob
+                    ? { ...clip, audioUrl: URL.createObjectURL(blob) }
+                    : clip;
+                } catch (error) {
+                  console.error(
+                    `[TimelineStore] failed to hydrate audio ${clip.fileId}:`,
+                    error,
+                  );
+                  return clip;
+                }
+              }),
+            ),
+          })),
+        );
+      }),
+    );
+
+    const currentTracksByFrame = this.state.audioTracksByFrame;
+    const mergedTracksByFrame: Record<string, AudioTrack[]> = {};
+    for (const [frameId, currentTracks] of Object.entries(
+      currentTracksByFrame,
+    )) {
+      const hydratedTracks = hydratedTracksByFrame[frameId] || [];
+      mergedTracksByFrame[frameId] = currentTracks.map((track) => {
+        const hydratedTrack = hydratedTracks.find(
+          (candidate) => candidate.id === track.id,
+        );
+        if (!hydratedTrack) return track;
+
+        return {
+          ...track,
+          clips: track.clips.map((clip) =>
+            hydratedTrack.clips.find((candidate) => candidate.id === clip.id) ||
+            clip,
+          ),
+        };
+      });
+    }
+
+    this.setState({ audioTracksByFrame: mergedTracksByFrame });
   }
 
   // ── Keyframe Operations ──
@@ -471,6 +573,7 @@ export class TimelineStore {
     // Remove empty tracks
     tracks = tracks.filter((track) => track.clips.length > 0);
     this.setActiveAudioTracks(tracks);
+    void clearObsoleteAudio(collectUsedAudioFileIds(this.state.audioTracksByFrame));
   }
 
   // ── Playback Controls ──
