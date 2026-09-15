@@ -28,7 +28,7 @@ _A layer built on top of [Excalidraw](https://github.com/excalidraw/excalidraw),
   keyframe → hit play, is the single most convincing thing in this README.
 -->
 
-> 📺 **[Watch the demo video](#)** — draw two scenes, mark them as keyframes, hit play, watch it animate.
+> 📺 **[Watch the demo video](https://youtu.be/IXXF-_087is)** — draw two scenes, mark them as keyframes, hit play, watch it animate.
 
 <div align="center">
   <!-- <img src=".github/assets/demo.gif" alt="Excalidraw Animate demo" width="720" /> -->
